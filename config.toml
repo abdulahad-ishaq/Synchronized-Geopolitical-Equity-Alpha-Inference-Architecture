@@ -1,0 +1,8 @@
+[server]
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+
+[runner]
+# Suppress torch/transformers deprecation noise in Streamlit Cloud logs
+magicEnabled = false
