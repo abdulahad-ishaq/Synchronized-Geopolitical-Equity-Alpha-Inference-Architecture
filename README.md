@@ -39,7 +39,7 @@ Streamlit (Custom CSS Branding)
 
 ###  Setup
 1. **Clone & Env:**
-   `git clone https://github.com/YourUsername/SGEAIA.git && cd SGEAIA`
+   `git clone https://github.com/abdulahadishaq512/SGEAIA.git && cd SGEAIA`
    `python -m venv venv && .\venv\Scripts\Activate.ps1`
    `pip install -r requirements.txt`
 
