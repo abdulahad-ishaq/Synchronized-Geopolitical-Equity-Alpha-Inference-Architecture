@@ -36,3 +36,13 @@ yFinance, NewsAPI, Pandas, NumPy
 Frontend: 
 
 Streamlit (Custom CSS Branding)
+
+###  Setup
+1. **Clone & Env:**
+   `git clone https://github.com/YourUsername/SGEAIA.git && cd SGEAIA`
+   `python -m venv venv && .\venv\Scripts\Activate.ps1`
+   `pip install -r requirements.txt`
+
+2. **Keys:** Add `NEWSAPI_KEY` and `FRED_API_KEY` to `.streamlit/secrets.toml`.
+
+3. **Launch:** `streamlit run app.py`
