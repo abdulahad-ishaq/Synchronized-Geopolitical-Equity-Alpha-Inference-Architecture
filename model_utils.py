@@ -35,7 +35,8 @@ logging.basicConfig(
 )
 
 DEVICE          = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-FINBERT_MODEL   = "yiyanghkust/finbert-tone"   # spec: finbert-tone
+FINBERT_MODEL    = "yiyanghkust/finbert-tone"  # spec: finbert-tone (primary)
+FINBERT_FALLBACK = "ProsusAI/finbert"           # fallback: standard BERT tokenizer
 CRISIS_VOL_THRESHOLD = 0.30   # annualised vol above this → Crisis Mode
 
 
@@ -132,36 +133,64 @@ class BiLSTMEncoder(nn.Module):
 # 2. FinBERT Encoder  (yiyanghkust/finbert-tone, @st.cache_resource)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@st.cache_resource(show_spinner="Loading FinBERT (finbert-tone)…")
+@st.cache_resource(show_spinner="Loading FinBERT (finbert-tone)...")
 def _load_finbert() -> tuple:
     """
-    Cached loader for yiyanghkust/finbert-tone.
+    Cached loader with three-level fallback strategy:
+      1. yiyanghkust/finbert-tone  with use_fast=False + sentencepiece
+      2. yiyanghkust/finbert-tone  with BertTokenizer directly
+      3. ProsusAI/finbert           standard BERT tokenizer (always works)
 
-    @st.cache_resource ensures the ~440 MB model is loaded only once per
-    Streamlit session, preventing repeated RAM allocation.
-
-    Python 3.12+ / Streamlit Cloud compatibility note:
-        The fast (Rust) tokenizer for finbert-tone ships no binary wheel for
-        Python >= 3.12. We therefore force `use_fast=False` so the pure-Python
-        BertTokenizer is used instead. This is ~10% slower on long batches but
-        fully correct and compatible with all CPython versions.
+    @st.cache_resource loads weights once per Streamlit session.
     """
     import sys
-    logger.info(
-        "Loading tokenizer & model: %s  (Python %s, use_fast=False)",
-        FINBERT_MODEL, sys.version.split()[0],
+    from transformers import BertTokenizer
+
+    logger.info("Loading FinBERT  Python %s", sys.version.split()[0])
+
+    # ── Attempt 1: finbert-tone with use_fast=False ───────────────────
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(
+            FINBERT_MODEL, use_fast=False,
+        )
+        model = AutoModelForSequenceClassification.from_pretrained(
+            FINBERT_MODEL,
+            output_hidden_states=True,
+            ignore_mismatched_sizes=True,
+        )
+        model.eval()
+        logger.info("Loaded %s (attempt 1 - AutoTokenizer slow)", FINBERT_MODEL)
+        return tokenizer, model
+    except Exception as e1:
+        logger.warning("Attempt 1 failed: %s", e1)
+
+    # ── Attempt 2: finbert-tone with BertTokenizer directly ──────────
+    try:
+        tokenizer = BertTokenizer.from_pretrained(FINBERT_MODEL)
+        model = AutoModelForSequenceClassification.from_pretrained(
+            FINBERT_MODEL,
+            output_hidden_states=True,
+            ignore_mismatched_sizes=True,
+        )
+        model.eval()
+        logger.info("Loaded %s (attempt 2 - BertTokenizer)", FINBERT_MODEL)
+        return tokenizer, model
+    except Exception as e2:
+        logger.warning("Attempt 2 failed: %s", e2)
+
+    # ── Attempt 3: ProsusAI/finbert fallback ─────────────────────────
+    logger.warning(
+        "Falling back to %s. Sentiment labels remain compatible.",
+        FINBERT_FALLBACK,
     )
-    tokenizer = AutoTokenizer.from_pretrained(
-        FINBERT_MODEL,
-        use_fast=False,          # ← required: no Rust wheel for Python ≥ 3.12
-    )
+    tokenizer = BertTokenizer.from_pretrained(FINBERT_FALLBACK)
     model = AutoModelForSequenceClassification.from_pretrained(
-        FINBERT_MODEL,
+        FINBERT_FALLBACK,
         output_hidden_states=True,
-        ignore_mismatched_sizes=True,   # silences harmless head-size warnings
+        ignore_mismatched_sizes=True,
     )
     model.eval()
-    logger.info("FinBERT loaded. Labels: %s", model.config.id2label)
+    logger.info("Loaded fallback %s (attempt 3)", FINBERT_FALLBACK)
     return tokenizer, model
 
 
