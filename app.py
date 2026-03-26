@@ -546,8 +546,8 @@ with col2:
             textfont=dict(family="IBM Plex Mono", size=10, color="#eceff1"),
         ))
         bar_fig.update_layout(
-            **PTHEME, height=160,
-            yaxis=dict(range=[0, 1], **PTHEME["yaxis"]),
+            **{**PTHEME, "yaxis": {**PTHEME["yaxis"], "range": [0, 1]}},
+            height=160,
             showlegend=False,
             title=dict(text="FinBERT-Tone Probabilities", font=dict(size=10, color="#546e7a")),
         )
@@ -577,8 +577,8 @@ with col2:
             textfont=dict(family="IBM Plex Mono", size=10, color="#eceff1"),
         ))
         reg_fig.update_layout(
-            **PTHEME, height=150,
-            yaxis=dict(range=[0, 1.15], **PTHEME["yaxis"]),
+            **{**PTHEME, "yaxis": {**PTHEME["yaxis"], "range": [0, 1.15]}},
+            height=150,
             showlegend=False,
         )
         st.plotly_chart(reg_fig, use_container_width=True, config={"displayModeBar": False})
