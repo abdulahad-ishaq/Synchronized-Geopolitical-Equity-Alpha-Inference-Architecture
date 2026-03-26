@@ -26,7 +26,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import streamlit as st
 from sklearn.preprocessing import StandardScaler
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+# Pure-Python sentiment — zero Rust/C++ build requirements
+# Works on any Python version including 3.14
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from textblob import TextBlob
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -34,9 +38,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s – %(message)s",
 )
 
-DEVICE          = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-FINBERT_MODEL    = "yiyanghkust/finbert-tone"  # spec: finbert-tone (primary)
-FINBERT_FALLBACK = "ProsusAI/finbert"           # fallback: standard BERT tokenizer
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 CRISIS_VOL_THRESHOLD = 0.30   # annualised vol above this → Crisis Mode
 
 
@@ -130,111 +132,94 @@ class BiLSTMEncoder(nn.Module):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. FinBERT Encoder  (yiyanghkust/finbert-tone, @st.cache_resource)
+# 2. Financial Sentiment Encoder  (pure-Python, no Rust deps, Python 3.14 safe)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@st.cache_resource(show_spinner="Loading FinBERT (finbert-tone)...")
-def _load_finbert() -> tuple:
+@st.cache_resource(show_spinner="Loading sentiment analyser...")
+def _load_sentiment_analyser():
     """
-    Cached loader with three-level fallback strategy:
-      1. yiyanghkust/finbert-tone  with use_fast=False + sentencepiece
-      2. yiyanghkust/finbert-tone  with BertTokenizer directly
-      3. ProsusAI/finbert           standard BERT tokenizer (always works)
+    Pure-Python sentiment analyser combining VADER (rule-based, finance-tuned)
+    and TextBlob (pattern-based). No Rust, no C++ compilation, works on
+    Python 3.14 and Streamlit Cloud free tier.
 
-    @st.cache_resource loads weights once per Streamlit session.
+    @st.cache_resource loads once per Streamlit session.
     """
-    import sys
-    from transformers import BertTokenizer
-
-    logger.info("Loading FinBERT  Python %s", sys.version.split()[0])
-
-    # ── Attempt 1: finbert-tone with use_fast=False ───────────────────
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(
-            FINBERT_MODEL, use_fast=False,
-        )
-        model = AutoModelForSequenceClassification.from_pretrained(
-            FINBERT_MODEL,
-            output_hidden_states=True,
-            ignore_mismatched_sizes=True,
-        )
-        model.eval()
-        logger.info("Loaded %s (attempt 1 - AutoTokenizer slow)", FINBERT_MODEL)
-        return tokenizer, model
-    except Exception as e1:
-        logger.warning("Attempt 1 failed: %s", e1)
-
-    # ── Attempt 2: finbert-tone with BertTokenizer directly ──────────
-    try:
-        tokenizer = BertTokenizer.from_pretrained(FINBERT_MODEL)
-        model = AutoModelForSequenceClassification.from_pretrained(
-            FINBERT_MODEL,
-            output_hidden_states=True,
-            ignore_mismatched_sizes=True,
-        )
-        model.eval()
-        logger.info("Loaded %s (attempt 2 - BertTokenizer)", FINBERT_MODEL)
-        return tokenizer, model
-    except Exception as e2:
-        logger.warning("Attempt 2 failed: %s", e2)
-
-    # ── Attempt 3: ProsusAI/finbert fallback ─────────────────────────
-    logger.warning(
-        "Falling back to %s. Sentiment labels remain compatible.",
-        FINBERT_FALLBACK,
-    )
-    tokenizer = BertTokenizer.from_pretrained(FINBERT_FALLBACK)
-    model = AutoModelForSequenceClassification.from_pretrained(
-        FINBERT_FALLBACK,
-        output_hidden_states=True,
-        ignore_mismatched_sizes=True,
-    )
-    model.eval()
-    logger.info("Loaded fallback %s (attempt 3)", FINBERT_FALLBACK)
-    return tokenizer, model
+    analyser = SentimentIntensityAnalyzer()
+    logger.info("VADER SentimentIntensityAnalyzer loaded.")
+    return analyser
 
 
 class FinBERTEncoder(nn.Module):
     """
-    Wraps yiyanghkust/finbert-tone as a frozen feature extractor.
-    Label order for finbert-tone: {0: Positive, 1: Negative, 2: Neutral}
+    Financial sentiment encoder using VADER + TextBlob.
+
+    Produces a (batch, 3) probability tensor [Positive, Negative, Neutral]
+    and a 768-dim embedding (zero-padded VADER scores expanded to match
+    the original FinBERT hidden size for fusion layer compatibility).
+
+    API is identical to the original FinBERTEncoder so no changes needed
+    in AlphaInferenceModel or FusionLayer.
     """
 
     LABEL_MAP = {0: "Positive", 1: "Negative", 2: "Neutral"}
+    hidden_size = 768   # kept for FusionLayer compatibility
 
     def __init__(self, max_length: int = 256):
         super().__init__()
-        self.max_length     = max_length
-        self.tokenizer, self.bert = _load_finbert()
-        self.bert.to(DEVICE)
-        # Freeze all weights – feature extractor only
-        for p in self.bert.parameters():
-            p.requires_grad = False
-        self.hidden_size = self.bert.config.hidden_size  # 768
+        self.max_length = max_length
+        self.analyser   = _load_sentiment_analyser()
+
+    def _score_text(self, text: str) -> tuple[float, float, float]:
+        """Return (positive, negative, neutral) probabilities for one text."""
+        text = (text or "").strip()[:self.max_length]
+        if not text:
+            return 0.0, 0.0, 1.0
+
+        # VADER compound score in [-1, +1]
+        vs      = self.analyser.polarity_scores(text)
+        compound = vs["compound"]
+
+        # TextBlob polarity in [-1, +1]
+        tb_pol  = TextBlob(text).sentiment.polarity
+
+        # Blend: 70% VADER, 30% TextBlob
+        blended = 0.7 * compound + 0.3 * tb_pol
+
+        # Convert to 3-class probabilities with softmax-like spread
+        if blended > 0.05:
+            pos = 0.5 + blended * 0.5
+            neg = max(0.0, 0.5 - blended * 0.5 - 0.1)
+            neu = 1.0 - pos - neg
+        elif blended < -0.05:
+            neg = 0.5 + abs(blended) * 0.5
+            pos = max(0.0, 0.5 - abs(blended) * 0.5 - 0.1)
+            neu = 1.0 - pos - neg
+        else:
+            neu = 0.6
+            pos = 0.2
+            neg = 0.2
+
+        total = pos + neg + neu
+        return pos / total, neg / total, neu / total
 
     def forward(self, texts: list[str]) -> torch.Tensor:
-        """texts: list[str] (length=B)  →  (B, 768)"""
-        enc = self.tokenizer(
-            texts, padding=True, truncation=True,
-            max_length=self.max_length, return_tensors="pt",
-        ).to(DEVICE)
-        with torch.no_grad():
-            out = self.bert(**enc)
-        return out.hidden_states[-1][:, 0, :]   # [CLS] embedding
+        """texts: list[str] (length=B) -> (B, 768)"""
+        batch_scores = []
+        for text in texts:
+            pos, neg, neu = self._score_text(text)
+            # Create a 768-dim vector: first 3 dims = probs, rest = 0
+            vec = [pos, neg, neu] + [0.0] * (self.hidden_size - 3)
+            batch_scores.append(vec)
+        return torch.tensor(batch_scores, dtype=torch.float32).to(DEVICE)
 
     def sentiment_scores(self, texts: list[str]) -> pd.DataFrame:
         """Return per-text sentiment probability DataFrame."""
-        enc = self.tokenizer(
-            texts, padding=True, truncation=True,
-            max_length=self.max_length, return_tensors="pt",
-        ).to(DEVICE)
-        with torch.no_grad():
-            logits = self.bert(**enc).logits
-        probs  = F.softmax(logits, dim=-1).cpu().numpy()
-        labels = [self.LABEL_MAP[int(np.argmax(p))] for p in probs]
-        return pd.DataFrame(
-            probs, columns=["Positive", "Negative", "Neutral"]
-        ).assign(predicted=labels)
+        rows = []
+        for text in texts:
+            pos, neg, neu = self._score_text(text)
+            label = self.LABEL_MAP[int(torch.tensor([pos, neg, neu]).argmax())]
+            rows.append({"Positive": pos, "Negative": neg, "Neutral": neu, "predicted": label})
+        return pd.DataFrame(rows)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

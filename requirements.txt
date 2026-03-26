@@ -1,23 +1,23 @@
 # ───────────────────────────────────────────────────────────────────────────
 # Synchronized Geopolitical-Equity Alpha Inference Architecture
-# requirements.txt — let pip pick Python 3.14 compatible wheels automatically
+# Python 3.14 compatible — ZERO Rust/C++ build dependencies
 # ───────────────────────────────────────────────────────────────────────────
 
-# ── Streamlit (pinned to known working version with altair 5) ────────────
+# ── Streamlit ────────────────────────────────────────────────────────────
 streamlit==1.45.0
 altair==5.5.0
 
-# ── Core scientific stack (no version pin = pip picks 3.14 wheel) ────────
+# ── Core scientific stack ────────────────────────────────────────────────
 numpy
 pandas
 scikit-learn
 
-# ── Deep learning ────────────────────────────────────────────────────────
+# ── Deep learning (PyTorch only — no transformers/tokenizers) ────────────
 torch
-transformers==4.46.3
-sentencepiece
-huggingface-hub
-safetensors
+
+# ── NLP sentiment (pure Python — no Rust, no compilation) ───────────────
+vaderSentiment
+textblob
 
 # ── Market data ──────────────────────────────────────────────────────────
 yfinance
