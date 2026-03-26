@@ -39,12 +39,33 @@ yFinance, NewsAPI, Pandas, NumPy
 
 Streamlit (Custom CSS Branding)
 
-###  Setup
-1. **Clone & Env:**
-   `git clone https://github.com/abdulahadishaq512/SGEAIA.git && cd SGEAIA`
-   `python -m venv venv && .\venv\Scripts\Activate.ps1`
-   `pip install -r requirements.txt`
+### Technical Interpretation & User Guide
+To effectively utilize the SGEAIA dashboard, observe the following data clusters:
 
-2. **Keys:** Add `NEWSAPI_KEY` and `FRED_API_KEY` to `.streamlit/secrets.toml`.
+#### 1. The Sentiment-Price Convergence
+The Pulse: If the Geopolitical Sentiment Pulse is "Negative" while the Alpha Signal remains "Flat," the model suggests that while news is bearish, the market hasn't yet priced in the shock.
 
-3. **Launch:** `streamlit run app.py`
+The Overlay: Divergence between price action and Alpha bars identifies non-random trends identified by the Bi-LSTM core.
+
+### 2. The Ablation Study (Hybrid vs. Price-Only)
+The Ablation table serves as the "Proof of Concept" for the AI:
+
+Hybrid (Blue): Performance using both FinBERT news data and historical prices.
+
+Price-Only (Grey): Performance using only historical price action.
+
+Goal: Improved Sharpe Ratio or RMSE in the Hybrid column validates that geopolitical news adds measurable predictive value.
+
+### 3. Risk Thresholds
+Crisis Mode: If Volatility crosses the red Crisis Threshold, the system triggers a defensive "FLAT" Alpha signal to prioritize capital preservation.
+
+### Setup & Installation
+Clone & Environment:
+
+git clone https://github.com/abdulahadishaq512/SGEAIA.git && cd SGEAIA
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Keys: Add NEWSAPI_KEY and FRED_API_KEY to .streamlit/secrets.toml.
+
+Launch: streamlit run app.py
