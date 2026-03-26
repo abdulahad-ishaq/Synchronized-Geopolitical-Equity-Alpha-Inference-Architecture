@@ -1,49 +1,18 @@
 # ───────────────────────────────────────────────────────────────────────────
 # Synchronized Geopolitical-Equity Alpha Inference Architecture
-# requirements.txt  |  Python 3.11  (pinned via runtime.txt)
+# requirements.txt — Python 3.14 compatible (no tokenizers Rust build)
 # ───────────────────────────────────────────────────────────────────────────
 
-# ── Core scientific stack ────────────────────────────────────────────────
-numpy>=1.26.0,<2.0.0
-pandas>=2.1.0,<3.0.0
-scikit-learn>=1.4.0,<2.0.0
-
-# ── Deep learning ────────────────────────────────────────────────────────
-# CPU-only torch (smaller Docker image → faster Streamlit Cloud cold-start)
-torch>=2.2.0,<3.0.0
-# Pin tokenizers < 0.20 to guarantee the slow (pure-Python) tokenizer
-# fallback is available on Python 3.11 without compilation issues.
-tokenizers>=0.15.0,<0.21.0
-transformers>=4.40.0,<5.0.0
-sentencepiece>=0.1.99,<1.0.0   # required by yiyanghkust/finbert-tone slow tokenizer
-accelerate>=0.30.0
-
-# ── Market data ──────────────────────────────────────────────────────────
-yfinance>=0.2.40
-pandas-datareader>=0.10.0
-
-# ── HTTP ─────────────────────────────────────────────────────────────────
-requests>=2.31.0
-
-# ── Streamlit + visualisation ────────────────────────────────────────────
-streamlit>=1.35.0
-plotly>=5.22.0
-
-# ── Utilities ────────────────────────────────────────────────────────────
-python-dotenv>=1.0.0
-
-# ───────────────────────────────────────────────────────────────────────────
-# DEPLOYMENT NOTES
-# ───────────────────────────────────────────────────────────────────────────
-# Python version is locked to 3.11 via runtime.txt in the repo root.
-# This avoids the tokenizers fast-tokenizer wheel gap that breaks on 3.12+.
-#
-# Streamlit Cloud secrets  (Settings → Secrets):
-#   NEWSAPI_KEY  = "..."
-#   FRED_API_KEY = "..."   (optional)
-#
-# Local dev:
-#   python -m venv venv && source venv/bin/activate
-#   pip install -r requirements.txt
-#   streamlit run app.py
-# ───────────────────────────────────────────────────────────────────────────
+numpy
+pandas
+scikit-learn
+torch
+transformers
+sentencepiece
+huggingface-hub
+yfinance
+pandas-datareader
+requests
+streamlit
+plotly
+python-dotenv
