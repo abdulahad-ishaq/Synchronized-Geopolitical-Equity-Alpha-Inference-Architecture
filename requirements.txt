@@ -1,35 +1,33 @@
 # ───────────────────────────────────────────────────────────────────────────
 # Synchronized Geopolitical-Equity Alpha Inference Architecture
-# Fully pinned for Streamlit Cloud (Python 3.14, uv installer)
+# requirements.txt — let pip pick Python 3.14 compatible wheels automatically
 # ───────────────────────────────────────────────────────────────────────────
 
-# ── Streamlit (must be new enough for altair 5+) ─────────────────────────
+# ── Streamlit (pinned to known working version with altair 5) ────────────
 streamlit==1.45.0
-
-# ── Altair (must match streamlit version) ────────────────────────────────
 altair==5.5.0
 
-# ── Core scientific stack ────────────────────────────────────────────────
-numpy==2.2.0
-pandas==2.2.3
-scikit-learn==1.6.1
+# ── Core scientific stack (no version pin = pip picks 3.14 wheel) ────────
+numpy
+pandas
+scikit-learn
 
 # ── Deep learning ────────────────────────────────────────────────────────
-torch==2.6.0
+torch
 transformers==4.46.3
-sentencepiece==0.2.0
-huggingface-hub==0.27.0
-safetensors==0.4.5
+sentencepiece
+huggingface-hub
+safetensors
 
 # ── Market data ──────────────────────────────────────────────────────────
-yfinance==0.2.51
-pandas-datareader==0.10.0
+yfinance
+pandas-datareader
 
 # ── HTTP ─────────────────────────────────────────────────────────────────
-requests==2.32.3
+requests
 
 # ── Visualisation ────────────────────────────────────────────────────────
-plotly==5.24.1
+plotly
 
 # ── Utilities ────────────────────────────────────────────────────────────
-python-dotenv==1.0.1
+python-dotenv
