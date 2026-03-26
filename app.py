@@ -671,9 +671,15 @@ with col3:
         articles: list[NewsArticle] = bundle.articles
 
         if not articles:
-            st.warning(
-                "No articles loaded. Ensure `NEWSAPI_KEY` is set in "
-                "`st.secrets` (Streamlit Cloud) or in your environment."
+            st.info(
+                "📡 **Intelligence Feed**\n\n"
+                "NewsAPI free tier blocks server-side requests. "
+                "The app uses GDELT as a fallback — if you see this message, "
+                "GDELT may have returned no results for the selected date range.\n\n"
+                "**To activate the full feed**, get a free key from "
+                "[GNews API](https://gnews.io) (works on servers) and add it to "
+                "Streamlit Secrets as `GNEWS_API_KEY = \"your_key\"`. "
+                "GNews gives 100 free requests/day and works perfectly on Streamlit Cloud."
             )
         else:
             # ── Source filter ────────────────────────────────────────────
