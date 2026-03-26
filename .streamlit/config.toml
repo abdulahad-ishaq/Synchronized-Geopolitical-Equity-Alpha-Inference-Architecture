@@ -1,0 +1,10 @@
+[server]
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+fileWatcherType = "none"
+[runner]
+
+magicEnabled = false
+[client]
+showErrorDetails = true
