@@ -5,37 +5,37 @@ SGEAIA is an advanced AI-driven financial intelligence engine designed to bridge
 
 ### Core Features
 
-### Dual-Engine Inference: 
+### • Dual-Engine Inference: 
 
 Combines FinBERT (Natural Language Processing) for news sentiment and Bi-LSTM (Neural Networks) for price trend prediction.
 
-### Temporal Synchronization: 
+### • Temporal Synchronization: 
 
 Aligns market ticks with real-time headlines from Reuters, Financial Times, and Al Jazeera.
 
-### Macro-Context Integration: 
+### • Macro-Context Integration: 
 
 Pulls economic indicators (CPI, Interest Rates) directly from FRED (Federal Reserve Economic Data).
 
-### Alpha Inference Dashboard: 
+### • Alpha Inference Dashboard: 
 
 A minimalist, high-contrast Streamlit interface for real-time visualization and backtesting.
 
 ### Tech Stack
 
-### Language: 
+### • Language: 
 
 Python 3.12+
 
-### AI/ML: 
+### • AI/ML: 
 
 PyTorch, HuggingFace (FinBERT), Scikit-learn
 
-### Data: 
+### • Data: 
 
 yFinance, NewsAPI, Pandas, NumPy
 
-### Frontend: 
+### • Frontend: 
 
 Streamlit (Custom CSS Branding)
 
@@ -62,7 +62,7 @@ Crisis Mode: If Volatility crosses the red Crisis Threshold, the system triggers
 ### Setup & Installation
 Clone & Environment:
 
-git clone https://github.com/abdulahadishaq512/SGEAIA.git && cd SGEAIA
+git clone https://github.com/abdulahadishaq512/Synchronized-Geopolitical-Equity-Alpha-Inference-Architecture.git && cd SGEAIA
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
