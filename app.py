@@ -31,13 +31,11 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 
+from config import Config
 from data_loader import (
     SynchronizedDataLoader,
     AlignedBundle,
     NewsArticle,
-    APPROVED_DOMAINS,
-    DOMAIN_DISPLAY,
-    LOOKBACK_DAYS,
 )
 from model_utils import (
     AlphaInferenceModel,
@@ -47,8 +45,13 @@ from model_utils import (
     AblationResult,
     build_model,
     run_inference,
-    CRISIS_VOL_THRESHOLD,
 )
+
+# Aliases for backward compatibility with old app.py references
+APPROVED_DOMAINS = Config.news.APPROVED_DOMAINS
+DOMAIN_DISPLAY   = Config.news.DOMAIN_DISPLAY
+LOOKBACK_DAYS    = Config.model.SEQ_LEN
+CRISIS_VOL_THRESHOLD = Config.model.CRISIS_VOL_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
