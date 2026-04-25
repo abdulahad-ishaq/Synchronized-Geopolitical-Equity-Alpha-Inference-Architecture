@@ -578,7 +578,7 @@ with col1:
                 x=vol_s.index, y=vol_s.values,
                 line=dict(color=Config.ui.WARNING_COLOUR, width=1.3),
                 fill="tozeroy",
-                fillcolor=f"{Config.ui.WARNING_COLOUR}10",
+                fillcolor="rgba(255,196,0,0.06)",
                 name="Vol 10d",
             ), row=3, col=1)
             fig.add_hline(
