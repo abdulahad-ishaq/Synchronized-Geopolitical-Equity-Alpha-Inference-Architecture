@@ -178,10 +178,13 @@ class PSXConfig:
 
     # PSX Indices available on Yahoo Finance
     INDICES: dict[str, str] = {
-        "^KSE100": "KSE-100 Index",
-        "^KSE30":  "KSE-30 Index",
-        "^KMIALLSHR": "KMI All Shares Index",
+        "KCHI.KA":   "KSE-100 Index (Yahoo Finance)",
+        "ENGRO.KA":  "Use individual stocks instead",
     }
+    # NOTE: KSE-100 index (^KSE100) is NOT available on Yahoo Finance.
+    # Use individual PSX stocks with .KA suffix instead.
+    # Best PSX proxies: ENGRO.KA, HBL.KA, OGDC.KA, SYS.KA
+    DEFAULT_PSX_TICKER: str = "ENGRO.KA"
 
     # Pakistan-specific news sources for geopolitical context
     PAKISTAN_NEWS_SOURCES: dict[str, str] = {
@@ -239,7 +242,7 @@ class GlobalMarketConfig:
             "open":       "09:15",
             "close":      "15:30",
             "yahoo_suffix": ".KA",
-            "main_index": "^KSE100",
+            "main_index": "ENGRO.KA",
         },
         "NYSE/NASDAQ": {
             "name":       "US Markets",
@@ -388,7 +391,7 @@ class GlobalMarketConfig:
 
     # Global market indices for quick overview
     GLOBAL_INDICES: dict[str, str] = {
-        "^KSE100":    "KSE-100 (Pakistan) 🇵🇰",
+        "ENGRO.KA":   "Engro Corp (Pakistan) 🇵🇰",
         "^GSPC":      "S&P 500 (USA) 🇺🇸",
         "^IXIC":      "NASDAQ (USA) 🇺🇸",
         "^FTSE":      "FTSE 100 (UK) 🇬🇧",
@@ -526,7 +529,7 @@ class NewsConfig:
 class MarketConfig:
     """Stock market and ticker settings for all supported markets."""
 
-    DEFAULT_TICKER:    str = "^KSE100"
+    DEFAULT_TICKER:    str = "ENGRO.KA"   # ^KSE100 not on Yahoo Finance
     DEFAULT_MARKET:    str = "PSX"
 
     FREE_TIER_TICKER_LIMIT:   int = 1
@@ -542,7 +545,7 @@ class MarketConfig:
     TICKER_GROUPS: dict[str, list[str]] = {
 
         # ── Pakistan (PSX) ────────────────────────────────────────────
-        "🇵🇰 KSE-100 Index": ["^KSE100"],
+        "🇵🇰 KSE-100 Top Picks": ["ENGRO.KA", "HBL.KA", "OGDC.KA", "SYS.KA"],
         "🇵🇰 PSX Banking": [
             "HBL.KA", "UBL.KA", "MCB.KA",
             "NBP.KA", "BAFL.KA", "MEBL.KA",

@@ -273,7 +273,7 @@ with st.sidebar:
     if selected_group == "Custom":
         ticker_input = st.text_input(
             "Ticker Symbol",
-            value="^KSE100" if selected_market == "PSX" else "SPY",
+            value="ENGRO.KA" if selected_market == "PSX" else "SPY",
         ).upper().strip()
     else:
         default_tickers = ticker_groups.get(selected_group, ["SPY"])
