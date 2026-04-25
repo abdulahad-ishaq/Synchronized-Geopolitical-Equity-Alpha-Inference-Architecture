@@ -2,18 +2,22 @@
 app.py
 ======
 Synchronized Geopolitical-Equity Alpha Inference Architecture
---------------------------------------------------------------
-3-column Streamlit Cloud dashboard:
+-------------------------------------------------------------
+Main Streamlit dashboard connecting all modules:
 
-  Col 1 – Candlestick + Alpha Prediction overlay
-  Col 2 – Geopolitical Sentiment Pulse gauge
-  Col 3 – Intelligence Feed (Reuters / FT / Al Jazeera) + Metrics
+  config.py        - Central configuration
+  data_loader.py   - GNews, RSS, PSX, DSA pipeline
+  model_utils.py   - BiLSTM + Sentiment + Fusion + Training
+  portfolio.py     - Multi-ticker, watchlist, paper trading
+  alerts.py        - Email alerts, signal detection, crisis monitor
+  reports.py       - PDF report generation
+  auth.py          - User authentication, free/premium tiers
+  backtest_viz.py  - Equity curves, drawdown, ablation charts
 
-Run locally:
-    streamlit run app.py
-
-Deploy: push to GitHub → connect to share.streamlit.io
-        add NEWSAPI_KEY to st.secrets in the Streamlit Cloud dashboard.
+Layout: 3-column dashboard
+  Col 1: Candlestick + Alpha overlay + Backtest
+  Col 2: Sentiment Pulse + Regime + Signals
+  Col 3: Intelligence Feed + Macro + Portfolio
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 import numpy as np
@@ -31,11 +35,13 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 
+# ── Local modules ──────────────────────────────────────────────────────────
 from config import Config
 from data_loader import (
     SynchronizedDataLoader,
     AlignedBundle,
     NewsArticle,
+    MultiTickerBundle,
 )
 from model_utils import (
     AlphaInferenceModel,
@@ -45,30 +51,37 @@ from model_utils import (
     AblationResult,
     build_model,
     run_inference,
+    prepare_training_data,
 )
-
-# Aliases for backward compatibility with old app.py references
-APPROVED_DOMAINS = Config.news.APPROVED_DOMAINS
-DOMAIN_DISPLAY   = Config.news.DOMAIN_DISPLAY
-LOOKBACK_DAYS    = Config.model.SEQ_LEN
-CRISIS_VOL_THRESHOLD = Config.model.CRISIS_VOL_THRESHOLD
+from portfolio import (
+    MultiTickerAnalyser,
+    WatchlistManager,
+    PaperTradingEngine,
+    PortfolioAnalytics,
+    PSXPortfolioHelper,
+    TickerSnapshot,
+)
+from alerts import AlertManager
+from reports import render_pdf_download_button, build_report_data
+from auth import AuthManager
+from backtest_viz import BacktestVisualiser
 
 logger = logging.getLogger(__name__)
 
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 # Page configuration
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
 st.set_page_config(
-    page_title  = "Geopolitical Alpha | SGEAIA",
-    page_icon   = "🛰️",
-    layout      = "wide",
-    initial_sidebar_state = "expanded",
+    page_title=Config.ui.APP_TITLE,
+    page_icon=Config.ui.APP_ICON,
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Custom CSS  — dark terminal / Bloomberg aesthetic
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
+# CSS
+# =============================================================================
 
 st.markdown("""
 <style>
@@ -81,289 +94,418 @@ html, body, [class*="css"] {
 }
 h1,h2,h3,h4 { font-family: 'IBM Plex Mono', monospace; }
 
-/* Header banner */
 .sgeaia-header {
-    background: linear-gradient(90deg, #0a1628 0%, #091220 60%, #0a1628 100%);
+    background: linear-gradient(90deg,#0a1628 0%,#091220 60%,#0a1628 100%);
     border-bottom: 1px solid #1a3050;
     padding: 0.6rem 1.2rem;
     display: flex; align-items: center; gap: 1rem;
+    margin-bottom: 0.8rem;
 }
 .sgeaia-title {
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 1.05rem; font-weight: 700;
+    font-size: 1.0rem; font-weight: 700;
     color: #00b4d8; letter-spacing: 0.06em; text-transform: uppercase;
 }
 .sgeaia-sub {
-    font-size: 0.72rem; color: #546e7a;
-    font-family: 'IBM Plex Mono', monospace;
-    letter-spacing: 0.05em;
+    font-size: 0.68rem; color: #546e7a;
+    font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em;
 }
 .ts-badge {
-    margin-left: auto;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.68rem; color: #37474f;
+    margin-left: auto; font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem; color: #37474f;
 }
-
-/* Section labels */
 .sec-label {
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.62rem; color: #37474f;
+    font-size: 0.60rem; color: #37474f;
     text-transform: uppercase; letter-spacing: 0.14em;
     margin-bottom: 0.3rem;
 }
-
-/* Panel card */
-.panel {
-    background: #0d1521;
-    border: 1px solid #162030;
-    border-radius: 6px; padding: 0.8rem; margin-bottom: 0.6rem;
+.alpha-big {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 2.8rem; font-weight: 700; line-height: 1;
 }
-
-/* Alpha value */
-.alpha-big { font-family: 'IBM Plex Mono', monospace; font-size: 3rem; font-weight: 700; line-height: 1; }
-.alpha-long    { color: #00e676; }
-.alpha-short   { color: #ff1744; }
-.alpha-flat    { color: #546e7a; }
-
-/* Crisis Mode banner */
 .crisis-banner {
     background: linear-gradient(90deg,#3d0000,#1a0000);
     border: 1px solid #ff1744; border-radius: 5px;
     padding: 0.4rem 0.8rem; text-align: center;
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.78rem; color: #ff6d6d;
-    letter-spacing: 0.08em; animation: pulse 2s infinite;
+    font-size: 0.76rem; color: #ff6d6d;
+    letter-spacing: 0.08em; margin-bottom: 0.5rem;
 }
-@keyframes pulse {
-    0%   { border-color: #ff1744; }
-    50%  { border-color: #ff6d00; }
-    100% { border-color: #ff1744; }
-}
-
-/* Intelligence feed */
 .feed-item {
     border-left: 3px solid #00b4d8;
-    background: #0a1220;
-    border-radius: 0 4px 4px 0;
-    padding: 0.45rem 0.7rem;
-    margin-bottom: 0.35rem;
-    font-size: 0.77rem; line-height: 1.45; color: #90a4ae;
+    background: #0a1220; border-radius: 0 4px 4px 0;
+    padding: 0.4rem 0.65rem; margin-bottom: 0.3rem;
+    font-size: 0.75rem; line-height: 1.4; color: #90a4ae;
 }
-.feed-item.reuters  { border-left-color: #ff8f00; }
-.feed-item.ft       { border-left-color: #f9a825; }
-.feed-item.aljazeera{ border-left-color: #00b4d8; }
+.feed-item.reuters      { border-left-color: #ff8f00; }
+.feed-item.ft           { border-left-color: #f9a825; }
+.feed-item.aljazeera    { border-left-color: #00b4d8; }
+.feed-item.nikkei       { border-left-color: #e91e63; }
+.feed-item.wsj          { border-left-color: #7c4dff; }
+.feed-item.bloomberg    { border-left-color: #00e676; }
+.feed-item.dawn         { border-left-color: #009688; }
+.feed-item.brecorder    { border-left-color: #4caf50; }
+.feed-item.thenews      { border-left-color: #ff5722; }
+.feed-item.tribune      { border-left-color: #2196f3; }
+.feed-item.geo          { border-left-color: #9c27b0; }
 .feed-source {
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.58rem; color: #546e7a;
-    text-transform: uppercase; letter-spacing: 0.1em;
-    margin-bottom: 2px;
+    font-size: 0.57rem; color: #546e7a;
+    text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 2px;
 }
-
-/* Metric pill */
-.metric-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
-.mpill {
-    flex: 1; background: #0a1220; border: 1px solid #162030;
-    border-radius: 5px; padding: 0.4rem 0.6rem;
-}
-.mpill-label {
+.impact-badge {
+    display: inline-block; font-size: 0.55rem;
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.58rem; color: #37474f;
-    text-transform: uppercase; letter-spacing: 0.1em;
+    padding: 1px 5px; border-radius: 3px;
+    background: #162030; color: #00b4d8;
+    margin-left: 4px;
 }
-.mpill-value {
+.psx-badge {
+    display: inline-block; font-size: 0.58rem;
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 1rem; color: #eceff1; font-weight: 600;
+    padding: 2px 6px; border-radius: 3px;
+    background: #0a1a0a; color: #4caf50;
+    border: 1px solid #1a3a1a;
 }
-
-/* Ablation table */
-.ablation-table { width: 100%; border-collapse: collapse; font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; }
-.ablation-table th { color: #37474f; border-bottom: 1px solid #162030; padding: 4px 8px; text-align: right; }
-.ablation-table th:first-child { text-align: left; }
-.ablation-table td { padding: 4px 8px; text-align: right; color: #90a4ae; }
-.ablation-table td:first-child { text-align: left; color: #546e7a; }
-.ablation-table tr:hover td { background: #0d1a28; }
-.better { color: #00e676; }
-.worse  { color: #ff5252; }
-
-/* Streamlit overrides */
-section[data-testid="stSidebar"] { background: #080c14; border-right: 1px solid #162030; }
-[data-testid="metric-container"] { background: #0d1521; border: 1px solid #162030; border-radius: 5px; }
-div.stButton > button { font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; border-radius: 4px; }
-div[data-testid="stHorizontalBlock"] > div { padding: 0 6px; }
+section[data-testid="stSidebar"] {
+    background: #080c14; border-right: 1px solid #162030;
+}
+[data-testid="metric-container"] {
+    background: #0d1521; border: 1px solid #162030; border-radius: 5px;
+}
+div[data-testid="stHorizontalBlock"] > div { padding: 0 5px; }
 </style>
 """, unsafe_allow_html=True)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 # Plotly theme
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
 PTHEME = dict(
-    paper_bgcolor = "rgba(0,0,0,0)",
-    plot_bgcolor  = "#0a1220",
-    font          = dict(family="IBM Plex Mono, monospace", color="#546e7a", size=10),
-    margin        = dict(l=8, r=8, t=28, b=8),
-    xaxis         = dict(gridcolor="#111d2e", zerolinecolor="#111d2e", showgrid=True),
-    yaxis         = dict(gridcolor="#111d2e", zerolinecolor="#111d2e", showgrid=True),
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="#0a1220",
+    font=dict(family="IBM Plex Mono, monospace", color="#546e7a", size=10),
+    margin=dict(l=8, r=8, t=28, b=8),
+    xaxis=dict(gridcolor="#111d2e", zerolinecolor="#111d2e"),
+    yaxis=dict(gridcolor="#111d2e", zerolinecolor="#111d2e"),
 )
 
-
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 # Session state initialisation
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
 for key, default in [
-    ("bundle",   None), ("result",   None),
-    ("ablation", None), ("loaded",   False),
-    ("backtest", None),
+    ("bundle",       None),
+    ("multi_bundle", None),
+    ("result",       None),
+    ("backtest",     None),
+    ("ablation",     None),
+    ("loaded",       False),
+    ("active_tab",   "Dashboard"),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
 
+# =============================================================================
+# Auth
+# =============================================================================
 
-# ─────────────────────────────────────────────────────────────────────────────
+auth    = AuthManager()
+if not auth.is_logged_in:
+    auth.render_login_page()
+    st.stop()
+
+user = auth.current_user
+tier = auth.tier
+
+# =============================================================================
+# Initialise managers
+# =============================================================================
+
+alert_mgr   = AlertManager()
+watchlist   = WatchlistManager()
+paper_eng   = PaperTradingEngine(
+    currency="PKR" if (user and user.country == "PK") else "USD"
+)
+viz         = BacktestVisualiser()
+psx_helper  = PSXPortfolioHelper()
+
+# =============================================================================
 # Sidebar
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
 with st.sidebar:
+    auth.render_user_menu()
+    st.divider()
+
     st.markdown("### ⚙ Configuration")
 
-    ticker = st.text_input("Ticker", value="SPY").upper().strip()
+    # Market selector
+    market_options = list(Config.global_markets.EXCHANGES.keys())
+    selected_market = st.selectbox(
+        "Market",
+        options=market_options,
+        index=0,
+        format_func=lambda m: (
+            f"{Config.global_markets.EXCHANGES[m]['flag']} "
+            f"{Config.global_markets.EXCHANGES[m]['name']}"
+        ),
+    )
+
+    # Ticker input
+    if selected_market == "PSX":
+        ticker_groups = {
+            k: v for k, v in Config.market.TICKER_GROUPS.items()
+            if "🇵🇰" in k
+        }
+    else:
+        ticker_groups = {
+            k: v for k, v in Config.market.TICKER_GROUPS.items()
+            if "🇵🇰" not in k
+        }
+
+    selected_group = st.selectbox(
+        "Ticker Group",
+        options=["Custom"] + list(ticker_groups.keys()),
+    )
+
+    if selected_group == "Custom":
+        ticker_input = st.text_input(
+            "Ticker Symbol",
+            value="^KSE100" if selected_market == "PSX" else "SPY",
+        ).upper().strip()
+    else:
+        default_tickers = ticker_groups.get(selected_group, ["SPY"])
+        ticker_input = st.selectbox(
+            "Select Ticker",
+            options=default_tickers,
+        )
+
+    # Multi-ticker (premium)
+    if tier.can_access_multi_ticker():
+        compare_tickers_str = st.text_input(
+            "Compare Tickers (comma-separated, max 5)",
+            value="",
+            placeholder="e.g. ENGRO.KA, HBL.KA, SYS.KA",
+        )
+        compare_tickers = [
+            t.strip().upper()
+            for t in compare_tickers_str.split(",")
+            if t.strip()
+        ][:Config.market.MAX_COMPARISON_TICKERS]
+    else:
+        compare_tickers = []
+        tier.render_upgrade_prompt("Multi-ticker comparison")
 
     lookback = st.slider(
-        "Lookback window (calendar days)",
-        min_value=90, max_value=365, value=120, step=15,
+        "Lookback (days)", 90, 365,
+        value=Config.ui.DEFAULT_LOOKBACK_DAYS, step=15,
     )
 
     st.divider()
-    st.caption("**Approved news sources (hard-coded)**")
-    for d in APPROVED_DOMAINS:
-        st.caption(f"• {DOMAIN_DISPLAY[d]}")
+
+    # Watchlist
+    with st.expander("📌 Watchlist", expanded=False):
+        wl_tickers = watchlist.tickers
+        if wl_tickers:
+            for wl_ticker in wl_tickers:
+                c1, c2 = st.columns([3, 1])
+                c1.caption(wl_ticker)
+                if c2.button("×", key=f"rm_{wl_ticker}"):
+                    watchlist.remove(wl_ticker)
+                    st.rerun()
+        add_col1, add_col2 = st.columns([3, 1])
+        new_ticker = add_col1.text_input(
+            "Add ticker", placeholder="e.g. OGDC.KA", label_visibility="collapsed"
+        )
+        if add_col2.button("Add"):
+            if new_ticker:
+                if watchlist.add(new_ticker.upper()):
+                    st.success(f"Added {new_ticker.upper()}")
+                    st.rerun()
+                else:
+                    st.warning("Already in watchlist")
 
     st.divider()
-    run_backtest_cb = st.checkbox("Run Backtesting & Ablation Study", value=False)
-    st.caption("⚠ Backtesting iterates over all sequence windows — may take 1–3 min.")
+
+    # Options
+    run_backtest_cb = st.checkbox(
+        "Run Backtesting & Ablation",
+        value=False,
+        help="Iterates all sequence windows. Takes 1-3 min.",
+    )
+
+    show_portfolio_cb = st.checkbox("Show Portfolio View", value=False)
+    show_paper_cb     = st.checkbox(
+        "Show Paper Trading",
+        value=False,
+        disabled=not tier.can_paper_trade(),
+    )
 
     st.divider()
-    run_btn = st.button("🛰 Run Inference", use_container_width=True, type="primary")
+    run_btn = st.button(
+        "🛰 Run Inference", use_container_width=True, type="primary"
+    )
+
     st.caption(
         "API keys are read from `st.secrets` (Streamlit Cloud) "
         "or environment variables (local)."
     )
 
-
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 # Header
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
+psx_open_str = "🟢 PSX OPEN" if psx_helper.is_psx_market_open() else "🔴 PSX CLOSED"
 st.markdown(f"""
 <div class="sgeaia-header">
   <div>
-    <div class="sgeaia-title">🛰 Synchronized Geopolitical-Equity Alpha Inference Architecture</div>
-    <div class="sgeaia-sub">Reuters · Financial Times · Al Jazeera  ·  FinBERT-Tone  ·  Bi-LSTM  ·  Crisis Mode Fusion</div>
+    <div class="sgeaia-title">
+      {Config.ui.APP_ICON} {Config.ui.APP_TITLE}
+    </div>
+    <div class="sgeaia-sub">{Config.ui.APP_SUBTITLE}</div>
   </div>
-  <div class="ts-badge">{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</div>
+  <div class="ts-badge">
+    {psx_open_str} &nbsp;|&nbsp;
+    {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown("<br>", unsafe_allow_html=True)
+# Alert market status bar
+alert_mgr.render_market_status_bar()
 
+# =============================================================================
+# Data & model loading helpers
+# =============================================================================
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Data + model loading
-# ─────────────────────────────────────────────────────────────────────────────
-
-@st.cache_data(ttl=300, show_spinner="Synchronizing market & geopolitical data…")
+@st.cache_data(ttl=300, show_spinner="Synchronizing market & geopolitical data...")
 def load_bundle(ticker: str, lookback: int) -> AlignedBundle:
-    loader = SynchronizedDataLoader(ticker=ticker, seq_len=LOOKBACK_DAYS)
+    loader = SynchronizedDataLoader(ticker=ticker, seq_len=Config.model.SEQ_LEN)
     return loader.load(lookback_days=lookback)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Run button logic
-# ─────────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=300, show_spinner="Loading multi-ticker data...")
+def load_multi_bundle(tickers: list[str], lookback: int) -> MultiTickerBundle:
+    loader = SynchronizedDataLoader(
+        ticker=tickers[0],
+        tickers=tickers,
+        seq_len=Config.model.SEQ_LEN,
+    )
+    return loader.load_multi(lookback_days=lookback)
+
+# =============================================================================
+# Run inference
+# =============================================================================
 
 if run_btn:
-    with st.spinner("Loading data…"):
+    with st.spinner("Loading data..."):
         try:
-            bundle = load_bundle(ticker, lookback)
+            bundle = load_bundle(ticker_input, lookback)
             st.session_state.bundle = bundle
         except Exception as exc:
             st.error(f"Data loading failed: {exc}")
             st.stop()
 
-    with st.spinner("Building models…"):
-        model, baseline = build_model(num_features=bundle.ohlcv.num_features)
+    with st.spinner("Building models..."):
+        model, baseline = build_model(
+            num_features=bundle.ohlcv.num_features
+        )
 
-    with st.spinner("Running inference…"):
+    with st.spinner("Running inference..."):
         try:
-            loader     = SynchronizedDataLoader(ticker=ticker, seq_len=LOOKBACK_DAYS)
+            loader     = SynchronizedDataLoader(
+                ticker=ticker_input, seq_len=Config.model.SEQ_LEN
+            )
             latest_seq = loader.latest_window(bundle)
+            latest_txt = (
+                bundle.news_daily["headline_concat"].iloc[-1]
+                if "headline_concat" in bundle.news_daily.columns
+                else ""
+            ) or ""
+            latest_txt = latest_txt[:512]
 
-            latest_text = bundle.news_daily["headline_concat"].iloc[-1] or "No headlines."
-            latest_text = latest_text[:512]
+            vol_series  = bundle.ohlcv.features.get(
+                "Volatility_10d", pd.Series([0.0])
+            )
+            current_vol = float(
+                vol_series.dropna().iloc[-1]
+            ) if len(vol_series.dropna()) else 0.0
 
-            vol_series  = bundle.ohlcv.features.get("Volatility_10d", pd.Series([0.0]))
-            current_vol = float(vol_series.dropna().iloc[-1]) if len(vol_series.dropna()) else 0.0
+            result = run_inference(
+                model, latest_seq, latest_txt, current_vol=current_vol
+            )
+            st.session_state.result  = result
+            st.session_state.loaded  = True
 
-            result = run_inference(model, latest_seq, latest_text, current_vol=current_vol)
-            st.session_state.result = result
-            st.session_state.loaded = True
+            # Process alerts
+            top_headline = ""
+            if bundle.ranked_articles:
+                top_headline = bundle.ranked_articles[0].title or ""
+            alert_mgr.process_new_result(
+                ticker_input, result, top_headline,
+                market=bundle.market,
+            )
+
         except Exception as exc:
             st.error(f"Inference failed: {exc}")
             st.stop()
 
+    # Multi-ticker comparison
+    if compare_tickers and tier.can_access_multi_ticker():
+        with st.spinner(f"Loading {len(compare_tickers)} tickers..."):
+            try:
+                all_tickers = [ticker_input] + [
+                    t for t in compare_tickers if t != ticker_input
+                ]
+                multi = load_multi_bundle(all_tickers, lookback)
+                st.session_state.multi_bundle = multi
+            except Exception as exc:
+                st.warning(f"Multi-ticker load failed (non-fatal): {exc}")
+
+    # Backtest
     if run_backtest_cb:
-        with st.spinner("Running backtesting & ablation study…"):
+        with st.spinner("Running backtesting & ablation study..."):
             try:
                 X, y, dates = loader.build_sequences(bundle)
-                texts = bundle.news_daily["headline_concat"].iloc[
-                    len(bundle.news_daily) - len(y) :
-                ].fillna("").tolist()
-                vols_arr = bundle.ohlcv.features["Volatility_10d"].iloc[
-                    len(bundle.ohlcv.features) - len(y) :
-                ].fillna(0.0).values.astype(np.float32)
-
-                engine   = BacktestEngine(model, baseline, num_features=bundle.ohlcv.num_features)
-                ablation = engine.ablation_study(X, y, texts, vols_arr)
-                st.session_state.ablation = ablation
+                n = len(y)
+                texts = (
+                    bundle.news_daily["headline_concat"]
+                    .iloc[len(bundle.news_daily) - n:]
+                    .fillna("")
+                    .tolist()
+                )
+                vols = (
+                    bundle.ohlcv.features["Volatility_10d"]
+                    .iloc[len(bundle.ohlcv.features) - n:]
+                    .fillna(0.0)
+                    .values.astype(np.float32)
+                )
+                engine   = BacktestEngine(model, baseline)
+                ablation = engine.ablation_study(
+                    X, y, texts, vols, market=bundle.market
+                )
                 st.session_state.backtest = ablation.hybrid
+                st.session_state.ablation = ablation
             except Exception as exc:
                 st.warning(f"Backtesting failed (non-fatal): {exc}")
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Helper colour functions
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _alpha_class(alpha: float) -> str:
-    if alpha > 0.1:  return "alpha-long"
-    if alpha < -0.1: return "alpha-short"
-    return "alpha-flat"
-
-def _feed_class(domain: str) -> str:
-    return {"reuters.com": "reuters", "ft.com": "ft", "aljazeera.com": "aljazeera"}.get(domain, "")
-
-def _pct(v: float, decimals: int = 1) -> str:
-    return f"{v:.{decimals}%}"
-
-def _signed(v: float, decimals: int = 3) -> str:
-    return f"{v:+.{decimals}f}"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 3-COLUMN MAIN LAYOUT
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
+# 3-column main layout
+# =============================================================================
 
 col1, col2, col3 = st.columns([1.7, 1.0, 1.3], gap="medium")
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# COLUMN 1 – Candlestick + Alpha Prediction Overlay
-# ══════════════════════════════════════════════════════════════════════════════
+# =============================================================================
+# COLUMN 1 — Price Chart + Alpha Overlay + Backtest
+# =============================================================================
 
 with col1:
-    st.markdown(f'<div class="sec-label">📈 {ticker} — Price & Alpha Overlay</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="sec-label">📈 {ticker_input} — Price & Alpha Overlay</div>',
+        unsafe_allow_html=True,
+    )
 
     if not st.session_state.loaded:
         st.info("Configure the sidebar and press **Run Inference** to begin.")
@@ -371,409 +513,648 @@ with col1:
         bundle = st.session_state.bundle
         result = st.session_state.result
         eq     = bundle.ohlcv.raw
+        sym    = Config.global_markets.EXCHANGES.get(
+            bundle.market, {}
+        ).get("symbol", "$")
 
-        # ── Candlestick ──────────────────────────────────────────────────
+        # ── Candlestick + Volume + Volatility ─────────────────────────
         fig = make_subplots(
             rows=3, cols=1,
             shared_xaxes=True,
             row_heights=[0.55, 0.25, 0.20],
             vertical_spacing=0.04,
-            subplot_titles=["", "Volume", "Volatility (10d ann.)"],
         )
 
         fig.add_trace(go.Candlestick(
-            x=eq.index, open=eq["Open"], high=eq["High"],
-            low=eq["Low"], close=eq["Close"],
-            increasing_line_color="#00e676",
-            decreasing_line_color="#ff1744",
-            increasing_fillcolor="#00e676",
-            decreasing_fillcolor="#ff1744",
-            name=ticker,
+            x=eq.index,
+            open=eq["Open"].squeeze(),
+            high=eq["High"].squeeze(),
+            low=eq["Low"].squeeze(),
+            close=eq["Close"].squeeze(),
+            increasing_line_color=Config.ui.BULL_COLOUR,
+            decreasing_line_color=Config.ui.BEAR_COLOUR,
+            increasing_fillcolor=Config.ui.BULL_COLOUR,
+            decreasing_fillcolor=Config.ui.BEAR_COLOUR,
+            name=ticker_input,
         ), row=1, col=1)
 
-        # Alpha prediction horizontal line overlay
-        last_close = float(eq["Close"].dropna().iloc[-1])
-        alpha_price_target = last_close * (1 + result.alpha * 0.03)   # illustrative projection
+        # Alpha projection line
+        last_close = bundle.ohlcv.latest_price
+        alpha_target = last_close * (1 + result.alpha * 0.03)
         fig.add_hline(
-            y=alpha_price_target,
-            line=dict(color="#00b4d8", width=1.5, dash="dot"),
-            annotation_text=f"α={result.alpha:+.4f}  {result.signal_label}",
-            annotation_font=dict(color="#00b4d8", family="IBM Plex Mono", size=10),
+            y=alpha_target,
+            line=dict(color=Config.ui.PRIMARY_COLOUR, width=1.5, dash="dot"),
+            annotation_text=(
+                f"α={result.alpha:+.4f}  "
+                f"{result.signal_arrow} {result.signal_label}"
+            ),
+            annotation_font=dict(
+                color=Config.ui.PRIMARY_COLOUR,
+                family="IBM Plex Mono", size=10,
+            ),
             row=1, col=1,
         )
 
+        # Volume
         if "Volume" in eq.columns:
-            colors = ["#00e676" if c >= o else "#ff1744"
-                      for c, o in zip(eq["Close"], eq["Open"])]
+            close_s = eq["Close"].squeeze()
+            open_s  = eq["Open"].squeeze()
+            vol_colours = [
+                Config.ui.BULL_COLOUR if c >= o else Config.ui.BEAR_COLOUR
+                for c, o in zip(close_s, open_s)
+            ]
             fig.add_trace(go.Bar(
-                x=eq.index, y=eq["Volume"].squeeze(),
-                marker_color=colors, opacity=0.55, name="Volume",
+                x=eq.index,
+                y=eq["Volume"].squeeze(),
+                marker_color=vol_colours,
+                opacity=0.55,
+                name="Volume",
             ), row=2, col=1)
 
+        # Volatility
         if "Volatility_10d" in bundle.ohlcv.features.columns:
             vol_s = bundle.ohlcv.features["Volatility_10d"]
             fig.add_trace(go.Scatter(
-                x=vol_s.index, y=vol_s,
-                line=dict(color="#ffc400", width=1.3),
-                fill="tozeroy", fillcolor="rgba(255,196,0,0.08)",
+                x=vol_s.index, y=vol_s.values,
+                line=dict(color=Config.ui.WARNING_COLOUR, width=1.3),
+                fill="tozeroy",
+                fillcolor=f"{Config.ui.WARNING_COLOUR}10",
                 name="Vol 10d",
             ), row=3, col=1)
             fig.add_hline(
-                y=CRISIS_VOL_THRESHOLD,
-                line=dict(color="#ff1744", width=1, dash="dot"),
+                y=Config.model.CRISIS_VOL_THRESHOLD,
+                line=dict(
+                    color=Config.ui.CRISIS_COLOUR,
+                    width=1, dash="dot",
+                ),
                 annotation_text="Crisis threshold",
-                annotation_font=dict(color="#ff1744", size=9, family="IBM Plex Mono"),
+                annotation_font=dict(
+                    color=Config.ui.CRISIS_COLOUR,
+                    size=8, family="IBM Plex Mono",
+                ),
                 row=3, col=1,
             )
 
         fig.update_layout(
             **PTHEME,
-            height=480,
+            height=460,
             showlegend=False,
             xaxis_rangeslider_visible=False,
         )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(
+            fig, use_container_width=True,
+            config={"displayModeBar": False},
+        )
 
-        # ── Crisis Mode banner ───────────────────────────────────────────
+        # Crisis Mode banner
         if result.crisis_mode:
             st.markdown(
-                f'<div class="crisis-banner">⚠ CRISIS MODE ACTIVE — '
-                f'Realised Vol {result.current_vol:.1%} > {CRISIS_VOL_THRESHOLD:.0%} threshold — '
-                f'Geopolitical text weight elevated to {result.crisis_weight:.0%}</div>',
+                f'<div class="crisis-banner">'
+                f'⚠ CRISIS MODE ACTIVE — '
+                f'Vol {result.current_vol:.1%} > '
+                f'{Config.model.CRISIS_VOL_THRESHOLD:.0%} threshold — '
+                f'Geo text weight: {result.crisis_weight:.0%}'
+                f'</div>',
                 unsafe_allow_html=True,
             )
 
-        # ── Performance metrics ──────────────────────────────────────────
-        bt = st.session_state.backtest
-        if bt:
-            st.markdown('<div class="sec-label" style="margin-top:0.8rem;">📊 Backtest Metrics (Hybrid)</div>', unsafe_allow_html=True)
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Sharpe Ratio",   f"{bt.sharpe_ratio:.3f}")
-            m2.metric("Max Drawdown",   f"{bt.max_drawdown:.1%}")
-            m3.metric("RMSE",           f"{bt.rmse:.5f}")
-            m4, m5, m6 = st.columns(3)
-            m4.metric("Annual Return",  f"{bt.annualised_return:.1%}")
-            m5.metric("Total Return",   f"{bt.total_return:.1%}")
-            m6.metric("Trades",         str(bt.n_trades))
-
-            # Equity curve
-            ec_fig = go.Figure(go.Scatter(
-                x=list(range(len(bt.equity_curve))),
-                y=bt.equity_curve.values,
-                line=dict(color="#00b4d8", width=1.5),
-                fill="tozeroy", fillcolor="rgba(0,180,216,0.07)",
-            ))
-            ec_fig.add_hline(y=1.0, line=dict(color="#546e7a", width=1, dash="dot"))
-            ec_fig.update_layout(
-                **PTHEME, height=180,
-                title=dict(text="Equity Curve (Hybrid Strategy)", font=dict(size=11, color="#546e7a")),
+        # PSX market status
+        if bundle.market == "PSX":
+            is_open  = psx_helper.is_psx_market_open()
+            next_ses = psx_helper.next_trading_session()
+            colour   = Config.ui.BULL_COLOUR if is_open else Config.ui.BEAR_COLOUR
+            st.markdown(
+                f'<div style="font-family:IBM Plex Mono;font-size:0.68rem;'
+                f'color:{colour};">● PSX '
+                f'{"OPEN" if is_open else "CLOSED"}'
+                f'{" · " + next_ses if not is_open else ""}'
+                f'</div>',
+                unsafe_allow_html=True,
             )
-            st.plotly_chart(ec_fig, use_container_width=True, config={"displayModeBar": False})
 
+        # ── Backtest section ─────────────────────────────────────────
+        if st.session_state.backtest and st.session_state.ablation:
+            with st.expander("📊 Backtesting & Ablation Study", expanded=False):
+                viz.render(
+                    backtest=st.session_state.backtest,
+                    ablation=st.session_state.ablation,
+                    ticker=ticker_input,
+                    market=bundle.market if bundle else "US",
+                )
 
-# ══════════════════════════════════════════════════════════════════════════════
-# COLUMN 2 – Geopolitical Sentiment Pulse Gauge
-# ══════════════════════════════════════════════════════════════════════════════
+        # ── Multi-ticker comparison ───────────────────────────────────
+        if st.session_state.multi_bundle:
+            with st.expander(
+                f"📊 Multi-Ticker Comparison "
+                f"({len(st.session_state.multi_bundle.tickers)} tickers)",
+                expanded=False,
+            ):
+                analyser = MultiTickerAnalyser(
+                    st.session_state.multi_bundle.tickers
+                )
+                tab_norm, tab_corr, tab_vol = st.tabs([
+                    "Normalised Returns",
+                    "Correlation Matrix",
+                    "Volatility",
+                ])
+                with tab_norm:
+                    st.plotly_chart(
+                        analyser.build_comparison_chart(
+                            st.session_state.multi_bundle, normalise=True
+                        ),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
+                    )
+                with tab_corr:
+                    st.plotly_chart(
+                        analyser.build_correlation_heatmap(
+                            st.session_state.multi_bundle
+                        ),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
+                    )
+                with tab_vol:
+                    st.plotly_chart(
+                        analyser.build_volatility_comparison(
+                            st.session_state.multi_bundle
+                        ),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
+                    )
+
+        # ── PDF Report ────────────────────────────────────────────────
+        if tier.can_generate_pdf() and st.session_state.loaded:
+            st.divider()
+            if st.button(
+                "📄 Generate PDF Report",
+                use_container_width=True,
+            ):
+                report_data = build_report_data(
+                    bundle=st.session_state.bundle,
+                    result=st.session_state.result,
+                    backtest=st.session_state.backtest,
+                    ablation=st.session_state.ablation,
+                )
+                render_pdf_download_button(report_data)
+        elif not tier.can_generate_pdf():
+            tier.render_upgrade_prompt("PDF Report Generation")
+
+# =============================================================================
+# COLUMN 2 — Sentiment Pulse + Regime + Alpha Signal
+# =============================================================================
 
 with col2:
-    st.markdown('<div class="sec-label">🌐 Geopolitical Sentiment Pulse</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sec-label">🌐 Geopolitical Sentiment Pulse</div>',
+        unsafe_allow_html=True,
+    )
 
     if not st.session_state.loaded:
-        st.info("Awaiting inference…")
+        st.info("Awaiting inference...")
     else:
         result = st.session_state.result
-        bundle = st.session_state.bundle
 
-        # ── Sentiment Pulse gauge ────────────────────────────────────────
-        # Map Positive→+1, Neutral→0, Negative→-1 for gauge value
+        # ── Sentiment gauge ───────────────────────────────────────────
         sent_score = (
-            result.sentiment_probs["Positive"] - result.sentiment_probs["Negative"]
-        )   # in [-1, 1]
-        gauge_val = (sent_score + 1) / 2 * 100   # map to [0, 100]
-
-        SENT_COLOUR = {
-            "Positive": "#00e676",
-            "Neutral":  "#ffc400",
-            "Negative": "#ff1744",
+            result.sentiment_probs["Positive"] -
+            result.sentiment_probs["Negative"]
+        )
+        gauge_val  = (sent_score + 1) / 2 * 100
+        sent_col_map = {
+            "Positive": Config.ui.BULL_COLOUR,
+            "Negative": Config.ui.BEAR_COLOUR,
+            "Neutral":  Config.ui.WARNING_COLOUR,
         }
-        sent_col = SENT_COLOUR.get(result.sentiment, "#546e7a")
+        sent_col = sent_col_map.get(result.sentiment, Config.ui.NEUTRAL_COLOUR)
 
         gauge_fig = go.Figure(go.Indicator(
             mode="gauge+number+delta",
             value=gauge_val,
             number=dict(
                 suffix=" / 100",
-                font=dict(family="IBM Plex Mono", color=sent_col, size=26),
+                font=dict(
+                    family="IBM Plex Mono",
+                    color=sent_col, size=24,
+                ),
             ),
             title=dict(
                 text=f"<b>{result.sentiment}</b>",
-                font=dict(family="IBM Plex Mono", color=sent_col, size=14),
+                font=dict(
+                    family="IBM Plex Mono",
+                    color=sent_col, size=13,
+                ),
             ),
-            delta=dict(reference=50, relative=False,
-                       increasing=dict(color="#00e676"),
-                       decreasing=dict(color="#ff1744")),
+            delta=dict(
+                reference=50, relative=False,
+                increasing=dict(color=Config.ui.BULL_COLOUR),
+                decreasing=dict(color=Config.ui.BEAR_COLOUR),
+            ),
             gauge=dict(
-                axis=dict(range=[0, 100], tickcolor="#162030",
-                          tickfont=dict(family="IBM Plex Mono", size=9)),
+                axis=dict(
+                    range=[0, 100], tickcolor="#162030",
+                    tickfont=dict(family="IBM Plex Mono", size=8),
+                ),
                 bar=dict(color=sent_col, thickness=0.22),
                 bgcolor="#0a1220",
                 borderwidth=0,
                 steps=[
                     dict(range=[0,  30], color="#1a0a0a"),
-                    dict(range=[30, 70], color="#0f1a0f"),
+                    dict(range=[30, 70], color="#0f180f"),
                     dict(range=[70,100], color="#0a1a0a"),
                 ],
-                threshold=dict(
-                    line=dict(color="#eceff1", width=2),
-                    thickness=0.85,
-                    value=gauge_val,
-                ),
             ),
         ))
         gauge_fig.update_layout(
             paper_bgcolor="rgba(0,0,0,0)",
             font=dict(family="IBM Plex Mono", color="#546e7a"),
             margin=dict(l=10, r=10, t=50, b=10),
-            height=260,
+            height=240,
         )
-        st.plotly_chart(gauge_fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(
+            gauge_fig, use_container_width=True,
+            config={"displayModeBar": False},
+        )
 
-        # ── Sentiment breakdown bars ─────────────────────────────────────
-        s_probs = result.sentiment_probs
-        bar_fig = go.Figure(go.Bar(
+        # ── FinBERT-Tone probabilities ────────────────────────────────
+        s_probs  = result.sentiment_probs
+        bar_fig  = go.Figure(go.Bar(
             x=list(s_probs.keys()),
             y=list(s_probs.values()),
-            marker_color=["#00e676", "#ff1744", "#ffc400"],
+            marker_color=[
+                Config.ui.BULL_COLOUR,
+                Config.ui.BEAR_COLOUR,
+                Config.ui.WARNING_COLOUR,
+            ],
             text=[f"{v:.1%}" for v in s_probs.values()],
             textposition="outside",
-            textfont=dict(family="IBM Plex Mono", size=10, color="#eceff1"),
+            textfont=dict(
+                family="IBM Plex Mono", size=10, color="#eceff1"
+            ),
         ))
         bar_fig.update_layout(
             **{**PTHEME, "yaxis": {**PTHEME["yaxis"], "range": [0, 1]}},
-            height=160,
+            height=155,
             showlegend=False,
-            title=dict(text="FinBERT-Tone Probabilities", font=dict(size=10, color="#546e7a")),
+            title=dict(
+                text="FinBERT-Tone Probabilities",
+                font=dict(size=10, color="#546e7a"),
+            ),
         )
-        st.plotly_chart(bar_fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(
+            bar_fig, use_container_width=True,
+            config={"displayModeBar": False},
+        )
 
         st.divider()
 
-        # ── Alpha signal block ───────────────────────────────────────────
-        cls = _alpha_class(result.alpha)
+        # ── Alpha signal ──────────────────────────────────────────────
+        alpha_col_map = {
+            "LONG":  "alpha-long  style='color:" + Config.ui.BULL_COLOUR + ";'",
+            "SHORT": "alpha-short style='color:" + Config.ui.BEAR_COLOUR + ";'",
+            "FLAT":  "alpha-flat  style='color:" + Config.ui.NEUTRAL_COLOUR + ";'",
+        }
+        alpha_css_colour = {
+            "LONG":  Config.ui.BULL_COLOUR,
+            "SHORT": Config.ui.BEAR_COLOUR,
+            "FLAT":  Config.ui.NEUTRAL_COLOUR,
+        }.get(result.signal_label, Config.ui.NEUTRAL_COLOUR)
+
         st.markdown(
-            f'<div style="text-align:center;padding:0.4rem 0;">'
+            f'<div style="text-align:center;padding:0.3rem 0;">'
             f'<div class="sec-label">ALPHA SIGNAL</div>'
-            f'<div class="alpha-big {cls}">{result.alpha:+.4f}</div>'
-            f'<div style="font-family:IBM Plex Mono;font-size:0.82rem;color:#546e7a;margin-top:4px;">'
-            f'{result.signal_label}</div></div>',
+            f'<div class="alpha-big" '
+            f'style="color:{alpha_css_colour};">'
+            f'{result.alpha:+.4f}</div>'
+            f'<div style="font-family:IBM Plex Mono;font-size:0.8rem;'
+            f'color:#546e7a;margin-top:3px;">'
+            f'{result.signal_arrow} {result.signal_label}</div>'
+            f'</div>',
             unsafe_allow_html=True,
         )
 
-        # ── Regime probabilities ─────────────────────────────────────────
-        st.markdown('<div class="sec-label" style="margin-top:0.6rem;">Market Regime</div>', unsafe_allow_html=True)
-        reg_p = result.regime_probs
+        # ── Regime probabilities ──────────────────────────────────────
+        st.markdown(
+            '<div class="sec-label" style="margin-top:0.5rem;">'
+            'Market Regime</div>',
+            unsafe_allow_html=True,
+        )
+        reg_p   = result.regime_probs
         reg_fig = go.Figure(go.Bar(
-            x=list(reg_p.keys()), y=list(reg_p.values()),
-            marker_color=["#00e676", "#ff1744", "#546e7a"],
+            x=list(reg_p.keys()),
+            y=list(reg_p.values()),
+            marker_color=[
+                Config.ui.BULL_COLOUR,
+                Config.ui.BEAR_COLOUR,
+                Config.ui.NEUTRAL_COLOUR,
+            ],
             text=[f"{v:.0%}" for v in reg_p.values()],
             textposition="outside",
-            textfont=dict(family="IBM Plex Mono", size=10, color="#eceff1"),
+            textfont=dict(
+                family="IBM Plex Mono", size=10, color="#eceff1"
+            ),
         ))
         reg_fig.update_layout(
             **{**PTHEME, "yaxis": {**PTHEME["yaxis"], "range": [0, 1.15]}},
-            height=150,
+            height=155,
             showlegend=False,
         )
-        st.plotly_chart(reg_fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(
+            reg_fig, use_container_width=True,
+            config={"displayModeBar": False},
+        )
 
-        # ── Headline volume by source ────────────────────────────────────
-        st.markdown('<div class="sec-label">Daily Headline Count by Source</div>', unsafe_allow_html=True)
-        nd = bundle.news_daily
-        if len(nd):
-            hvol_fig = go.Figure()
-            src_cols = [("reuters_count", "#ff8f00", "Reuters"),
-                        ("ft_count",      "#f9a825", "FT"),
-                        ("aljazeera_count","#00b4d8","Al Jazeera")]
-            for col, colour, label in src_cols:
-                if col in nd.columns:
-                    hvol_fig.add_trace(go.Bar(
-                        x=nd.index, y=nd[col],
-                        name=label, marker_color=colour, opacity=0.8,
-                    ))
-            hvol_fig.update_layout(
-                **PTHEME, height=160, barmode="stack", showlegend=True,
-                legend=dict(orientation="h", y=1.12,
-                            font=dict(family="IBM Plex Mono", size=9, color="#546e7a")),
-            )
-            st.plotly_chart(hvol_fig, use_container_width=True, config={"displayModeBar": False})
+        # ── Key metrics ───────────────────────────────────────────────
+        m1, m2 = st.columns(2)
+        m1.metric("Alpha",      f"{result.alpha:+.4f}")
+        m2.metric("Confidence", f"{result.confidence:.1%}")
+        m3, m4 = st.columns(2)
+        m3.metric("Regime",     result.regime)
+        m4.metric("Sentiment",  result.sentiment)
 
-        # ── Ablation Study ───────────────────────────────────────────────
-        abl = st.session_state.ablation
-        if abl:
-            st.markdown('<div class="sec-label" style="margin-top:0.6rem;">🧪 Ablation Study</div>', unsafe_allow_html=True)
-            h, p = abl.hybrid, abl.price_only
+        # ── Alert panel ───────────────────────────────────────────────
+        st.divider()
+        if tier.can_set_email_alerts():
+            alert_mgr.render_alert_panel()
+        else:
+            tier.render_upgrade_prompt("Email Alerts")
 
-            def _better(h_val: float, p_val: float, higher_is_better: bool = True) -> tuple[str, str]:
-                if higher_is_better:
-                    hc = "better" if h_val >= p_val else "worse"
-                    pc = "better" if p_val > h_val else "worse"
-                else:
-                    hc = "better" if h_val <= p_val else "worse"
-                    pc = "better" if p_val < h_val else "worse"
-                return hc, pc
-
-            rows = [
-                ("Sharpe Ratio",  f"{h.sharpe_ratio:.3f}",       f"{p.sharpe_ratio:.3f}",      *_better(h.sharpe_ratio, p.sharpe_ratio)),
-                ("Max Drawdown",  f"{h.max_drawdown:.1%}",        f"{p.max_drawdown:.1%}",      *_better(h.max_drawdown, p.max_drawdown, higher_is_better=False)),
-                ("RMSE",          f"{h.rmse:.5f}",                f"{p.rmse:.5f}",              *_better(h.rmse, p.rmse, higher_is_better=False)),
-                ("Annual Return", f"{h.annualised_return:.1%}",   f"{p.annualised_return:.1%}", *_better(h.annualised_return, p.annualised_return)),
-            ]
-
-            table_html = """
-<table class="ablation-table">
-<tr>
-  <th>Metric</th>
-  <th>Hybrid</th>
-  <th>Price-Only</th>
-</tr>
-"""
-            for metric, hv, pv, hc, pc in rows:
-                table_html += f"""<tr>
-  <td>{metric}</td>
-  <td class="{hc}">{hv}</td>
-  <td class="{pc}">{pv}</td>
-</tr>
-"""
-            table_html += "</table>"
-            st.markdown(table_html, unsafe_allow_html=True)
-
-            imp_s = abl.sharpe_improvement
-            imp_r = abl.rmse_improvement
-            s_col = "#00e676" if imp_s > 0 else "#ff1744"
-            r_col = "#00e676" if imp_r > 0 else "#ff1744"
-            st.markdown(
-                f'<div style="font-family:IBM Plex Mono;font-size:0.68rem;color:#37474f;margin-top:6px;">'
-                f'Sharpe Δ <span style="color:{s_col}">{imp_s:+.3f}</span> &nbsp;|&nbsp;'
-                f'RMSE Δ <span style="color:{r_col}">{imp_r:+.5f}</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# COLUMN 3 – Intelligence Feed + Macro
-# ══════════════════════════════════════════════════════════════════════════════
+# =============================================================================
+# COLUMN 3 — Intelligence Feed + Macro + Portfolio + Paper Trading
+# =============================================================================
 
 with col3:
-    st.markdown('<div class="sec-label">📡 Intelligence Feed — Reuters · FT · Al Jazeera</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sec-label">'
+        '📡 Intelligence Feed — '
+        + " · ".join(Config.news.DOMAIN_DISPLAY.values()) +
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
     if not st.session_state.loaded:
-        st.info("Awaiting inference…")
+        st.info("Awaiting inference...")
     else:
         bundle  = st.session_state.bundle
-        articles: list[NewsArticle] = bundle.articles
+        result  = st.session_state.result
+
+        # Use ranked articles if available, else all articles
+        articles: list[NewsArticle] = (
+            bundle.ranked_articles
+            if bundle.ranked_articles
+            else bundle.articles
+        )
 
         if not articles:
-            st.info(
-                "📡 **Intelligence Feed**\n\n"
-                "NewsAPI free tier blocks server-side requests. "
-                "The app uses GDELT as a fallback — if you see this message, "
-                "GDELT may have returned no results for the selected date range.\n\n"
-                "**To activate the full feed**, get a free key from "
-                "[GNews API](https://gnews.io) (works on servers) and add it to "
-                "Streamlit Secrets as `GNEWS_API_KEY = \"your_key\"`. "
-                "GNews gives 100 free requests/day and works perfectly on Streamlit Cloud."
+            st.warning(
+                "No articles loaded. Configure `GNEWS_API_KEY` in "
+                "Streamlit secrets to activate the feed."
             )
         else:
-            # ── Source filter ────────────────────────────────────────────
+            # Source filter
+            all_source_labels = list(
+                set(a.source_label for a in articles)
+            )
             selected_sources = st.multiselect(
                 "Filter by source",
-                options=list(DOMAIN_DISPLAY.values()),
-                default=list(DOMAIN_DISPLAY.values()),
+                options=all_source_labels,
+                default=all_source_labels,
             )
-            label_to_domain = {v: k for k, v in DOMAIN_DISPLAY.items()}
-            selected_domains = [label_to_domain[s] for s in selected_sources]
+            filtered = [
+                a for a in articles
+                if a.source_label in selected_sources
+            ]
 
-            filtered = [a for a in articles if a.source_domain in selected_domains]
-            filtered.sort(key=lambda a: a.published_at, reverse=True)
+            # Pakistan / Global tabs
+            pak_arts = [a for a in filtered if a.is_pakistan_source]
+            gbl_arts = [a for a in filtered if not a.is_pakistan_source]
 
-            st.caption(f"Showing {len(filtered)} of {len(articles)} articles")
+            tab_all, tab_pak, tab_gbl = st.tabs([
+                f"All ({len(filtered)})",
+                f"🇵🇰 PSX ({len(pak_arts)})",
+                f"🌍 Global ({len(gbl_arts)})",
+            ])
 
-            for art in filtered[:20]:
-                fc = _feed_class(art.source_domain)
-                ts = art.published_at.strftime("%b %d %H:%M UTC")
-                title_snip = art.title[:140] if art.title else "(No title)"
-                link_html = (
-                    f'<a href="{art.url}" target="_blank" '
-                    f'style="color:#90a4ae;text-decoration:none;">{title_snip}</a>'
-                    if art.url else title_snip
-                )
-                st.markdown(
-                    f'<div class="feed-item {fc}">'
-                    f'<div class="feed-source">{art.source_label} &nbsp;·&nbsp; {ts}</div>'
-                    f'{link_html}'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
+            def _render_feed(arts: list[NewsArticle], limit: int = 15) -> None:
+                for art in arts[:limit]:
+                    css  = art.source_css
+                    ts   = art.published_at.strftime("%b %d %H:%M UTC")
+                    title_snip = art.title[:140] if art.title else "(No title)"
+                    impact_str = (
+                        f'<span class="impact-badge">'
+                        f'⚡{art.impact_score:.2f}</span>'
+                        if art.impact_score > 0 else ""
+                    )
+                    pak_str = (
+                        '<span class="psx-badge">PSX</span>'
+                        if art.is_pakistan_source else ""
+                    )
+                    link_html = (
+                        f'<a href="{art.url}" target="_blank" '
+                        f'style="color:#90a4ae;text-decoration:none;">'
+                        f'{title_snip}</a>'
+                        if art.url else title_snip
+                    )
+                    st.markdown(
+                        f'<div class="feed-item {css}">'
+                        f'<div class="feed-source">'
+                        f'{art.source_label} · {ts}'
+                        f'{impact_str}{pak_str}'
+                        f'</div>'
+                        f'{link_html}'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+
+            with tab_all:
+                _render_feed(filtered)
+            with tab_pak:
+                if pak_arts:
+                    _render_feed(pak_arts)
+                else:
+                    st.caption(
+                        "No Pakistani news. Dawn and Business Recorder "
+                        "RSS feeds will appear here."
+                    )
+            with tab_gbl:
+                _render_feed(gbl_arts)
 
         st.divider()
 
-        # ── Macro panel ───────────────────────────────────────────────────
-        st.markdown('<div class="sec-label">📉 Macro Indicators (FRED)</div>', unsafe_allow_html=True)
+        # ── Macro indicators ──────────────────────────────────────────
+        st.markdown(
+            '<div class="sec-label">📉 Macro Indicators (FRED)</div>',
+            unsafe_allow_html=True,
+        )
         macro = bundle.macro
-
+        macro_labels = {
+            "FEDFUNDS":   "Fed Funds Rate",
+            "T10Y2Y":     "10Y-2Y Spread",
+            "DCOILWTICO": "WTI Crude $/bbl",
+        }
         if not macro.empty and macro.values.any():
-            macro_labels = {
-                "FEDFUNDS":   "Fed Funds Rate",
-                "T10Y2Y":     "10Y–2Y Spread",
-                "DCOILWTICO": "WTI Crude $/bbl",
-            }
             mac_fig = go.Figure()
-            colours = ["#00b4d8", "#b39ddb", "#69f0ae"]
+            colours = [
+                Config.ui.PRIMARY_COLOUR, "#b39ddb", "#69f0ae"
+            ]
             for i, col in enumerate(macro.columns):
-                if col in macro.columns and macro[col].any():
+                if macro[col].any():
                     mac_fig.add_trace(go.Scatter(
                         x=macro.index, y=macro[col],
                         name=macro_labels.get(col, col),
-                        line=dict(color=colours[i % len(colours)], width=1.3),
+                        line=dict(
+                            color=colours[i % len(colours)], width=1.3
+                        ),
                     ))
             mac_fig.update_layout(
-                **PTHEME, height=200,
+                **PTHEME, height=190,
                 legend=dict(
                     orientation="h", y=1.1,
-                    font=dict(family="IBM Plex Mono", size=9, color="#546e7a"),
+                    font=dict(
+                        family="IBM Plex Mono",
+                        size=8, color="#546e7a",
+                    ),
                 ),
             )
-            st.plotly_chart(mac_fig, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(
+                mac_fig, use_container_width=True,
+                config={"displayModeBar": False},
+            )
 
-            # Latest macro values
             mc1, mc2, mc3 = st.columns(3)
             for mcol, mcell in zip(macro.columns, [mc1, mc2, mc3]):
                 latest = macro[mcol].dropna()
-                val    = f"{float(latest.iloc[-1]):.2f}" if len(latest) else "N/A"
+                val    = (
+                    f"{float(latest.iloc[-1]):.2f}"
+                    if len(latest) else "N/A"
+                )
                 mcell.metric(macro_labels.get(mcol, mcol), val)
         else:
             st.caption(
-                "Macro data unavailable — set `FRED_API_KEY` in secrets "
-                "or install `pandas_datareader`."
+                "Macro data unavailable. Set `FRED_API_KEY` in secrets."
             )
 
-        st.divider()
+        # ── Portfolio view ────────────────────────────────────────────
+        if show_portfolio_cb and st.session_state.multi_bundle:
+            st.divider()
+            st.markdown(
+                '<div class="sec-label">💼 Portfolio View</div>',
+                unsafe_allow_html=True,
+            )
+            multi = st.session_state.multi_bundle
+            breakdown_fig = PortfolioAnalytics.build_market_breakdown_chart(
+                multi.tickers
+            )
+            div_score = PortfolioAnalytics.diversification_score(
+                multi.correlation_matrix
+            )
+            c_left, c_right = st.columns([1, 2])
+            with c_left:
+                st.plotly_chart(
+                    breakdown_fig,
+                    use_container_width=True,
+                    config={"displayModeBar": False},
+                )
+                st.metric("Diversification Score", f"{div_score}/100")
+            with c_right:
+                st.caption("Correlation Matrix")
+                st.plotly_chart(
+                    MultiTickerAnalyser(
+                        multi.tickers
+                    ).build_correlation_heatmap(multi),
+                    use_container_width=True,
+                    config={"displayModeBar": False},
+                )
 
-        # ── Model + data metadata ────────────────────────────────────────
-        st.markdown('<div class="sec-label">ℹ System Info</div>', unsafe_allow_html=True)
-        if st.session_state.result:
-            r = st.session_state.result
+        # ── Paper trading ─────────────────────────────────────────────
+        if show_paper_cb and tier.can_paper_trade():
+            st.divider()
+            st.markdown(
+                '<div class="sec-label">🎮 Paper Trading Simulator</div>',
+                unsafe_allow_html=True,
+            )
+            port = paper_eng.portfolio
+
+            p1, p2, p3 = st.columns(3)
+            p1.metric(
+                "Portfolio Value",
+                f"{port.currency_symbol}{port.portfolio_value:,.0f}",
+            )
+            p2.metric("Total P&L",  f"{port.total_pnl:+,.2f}")
+            p3.metric("Win Rate",   f"{port.win_rate:.0f}%")
+
+            # Quick trade entry
+            with st.expander("Open New Trade", expanded=False):
+                t1, t2, t3 = st.columns(3)
+                trade_ticker = t1.text_input(
+                    "Ticker", value=ticker_input
+                )
+                direction = t2.selectbox(
+                    "Direction", ["LONG", "SHORT"]
+                )
+                entry_price = t3.number_input(
+                    "Entry Price",
+                    value=bundle.ohlcv.latest_price,
+                    min_value=0.01,
+                )
+                if st.button("Open Trade", use_container_width=True):
+                    trade = paper_eng.open_trade(
+                        ticker=trade_ticker,
+                        direction=direction,
+                        entry_price=entry_price,
+                        currency=port.currency,
+                    )
+                    if trade:
+                        st.success(
+                            f"Opened {direction} #{trade.trade_id} "
+                            f"@ {port.currency_symbol}{entry_price:,.2f}"
+                        )
+                        st.rerun()
+                    else:
+                        st.error(
+                            "Trade failed. Check capital and position limits."
+                        )
+
+            # Equity curve
+            if port.closed_trades:
+                st.plotly_chart(
+                    paper_eng.build_equity_curve(),
+                    use_container_width=True,
+                    config={"displayModeBar": False},
+                )
+
+            # Trade log
+            if port.trades:
+                st.plotly_chart(
+                    paper_eng.build_trade_log_table(),
+                    use_container_width=True,
+                    config={"displayModeBar": False},
+                )
+
+            if st.button("Reset Portfolio", type="secondary"):
+                paper_eng.reset_portfolio(currency=port.currency)
+                st.rerun()
+
+        # ── System info ───────────────────────────────────────────────
+        st.divider()
+        st.markdown(
+            '<div class="sec-label">ℹ System Info</div>',
+            unsafe_allow_html=True,
+        )
+        if st.session_state.loaded:
             b = st.session_state.bundle
-            st.markdown(f"""
-<div style="font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:#37474f;line-height:1.9;">
-TICKER &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{b.ticker}<br>
-PERIOD &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{b.start} → {b.end}<br>
-TRADING DAYS {len(b.aligned_index)}<br>
-ARTICLES &nbsp;&nbsp;&nbsp;&nbsp;{len(b.articles)}<br>
-SEQ LEN &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{LOOKBACK_DAYS} days<br>
-FINBERT &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;yiyanghkust/finbert-tone<br>
-CRISIS VOL &nbsp;&nbsp;{CRISIS_VOL_THRESHOLD:.0%}<br>
-DOMAINS &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{" · ".join(APPROVED_DOMAINS)}<br>
-</div>
-""", unsafe_allow_html=True)
+            r = st.session_state.result
+            st.markdown(
+                f'<div style="font-family:IBM Plex Mono;'
+                f'font-size:0.65rem;color:#37474f;line-height:1.9;">'
+                f'TICKER &nbsp;&nbsp;&nbsp;{b.ticker}<br>'
+                f'MARKET &nbsp;&nbsp;&nbsp;{b.market} ({b.currency})<br>'
+                f'PERIOD &nbsp;&nbsp;&nbsp;{b.start} → {b.end}<br>'
+                f'T-DAYS &nbsp;&nbsp;&nbsp;{len(b.aligned_index)}<br>'
+                f'ARTICLES &nbsp;{len(b.articles)}<br>'
+                f'RANKED &nbsp;&nbsp;{len(b.ranked_articles)}<br>'
+                f'SEQ LEN &nbsp;&nbsp;{Config.model.SEQ_LEN} days<br>'
+                f'CRISIS THR {Config.model.CRISIS_VOL_THRESHOLD:.0%}<br>'
+                f'TIER &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{user.tier_label if user else "N/A"}<br>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )

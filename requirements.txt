@@ -1,9 +1,25 @@
-# ───────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
 # Synchronized Geopolitical-Equity Alpha Inference Architecture
-# Python 3.14 compatible — ZERO Rust/C++ build dependencies
-# ───────────────────────────────────────────────────────────────────────────
+# requirements.txt — Python 3.14 compatible (Streamlit Cloud free tier)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# IMPORTANT NOTES:
+#   - tokenizers is intentionally EXCLUDED (Rust build fails on Python 3.14)
+#   - transformers is intentionally EXCLUDED (depends on tokenizers)
+#   - Sentiment is handled by vaderSentiment + textblob (pure Python)
+#   - All packages below have Python 3.14 compatible wheels
+#
+# Streamlit Cloud secrets required (Settings → Secrets):
+#   GNEWS_API_KEY    = "..."   # gnews.io free tier (100 req/day)
+#   NEWSAPI_KEY      = "..."   # newsapi.org (optional fallback)
+#   FRED_API_KEY     = "..."   # fred.stlouisfed.org (optional)
+#   SENDGRID_API_KEY = "..."   # sendgrid.com (free, for email alerts)
+#   SUPABASE_URL     = "..."   # supabase.com (optional, for auth)
+#   SUPABASE_KEY     = "..."   # supabase.com (optional, for auth)
+#
+# ═══════════════════════════════════════════════════════════════════════════
 
-# ── Streamlit ────────────────────────────────────────────────────────────
+# ── Streamlit (pinned — must match altair version) ───────────────────────
 streamlit==1.45.0
 altair==5.5.0
 
@@ -15,7 +31,7 @@ scikit-learn
 # ── Deep learning (PyTorch only — no transformers/tokenizers) ────────────
 torch
 
-# ── NLP sentiment (pure Python — no Rust, no compilation) ───────────────
+# ── NLP sentiment (pure Python — zero Rust, Python 3.14 safe) ───────────
 vaderSentiment
 textblob
 
@@ -23,11 +39,14 @@ textblob
 yfinance
 pandas-datareader
 
-# ── HTTP ─────────────────────────────────────────────────────────────────
+# ── HTTP & networking ─────────────────────────────────────────────────────
 requests
 
 # ── Visualisation ────────────────────────────────────────────────────────
 plotly
+
+# ── PDF report generation ────────────────────────────────────────────────
+reportlab>=4.0.0
 
 # ── Utilities ────────────────────────────────────────────────────────────
 python-dotenv
