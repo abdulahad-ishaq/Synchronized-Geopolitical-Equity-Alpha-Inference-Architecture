@@ -395,7 +395,10 @@ class BaseLoader(ABC):
     @staticmethod
     def _detect_market(ticker: str) -> tuple[str, str]:
         t = ticker.upper()
-        if t.endswith(".KA") or t in ["^KSE100", "^KSE30", "^KMIALLSHR"]:
+        # PSX tickers — Yahoo Finance uses .KA suffix
+        # Note: ^KSE100 index is NOT available on Yahoo Finance
+        # Use individual stocks: ENGRO.KA, HBL.KA, OGDC.KA etc.
+        if t.endswith(".KA"):
             return "PSX", "PKR"
         if t.endswith(".T"):  return "TSE",     "JPY"
         if t.endswith(".HK"): return "HKEX",    "HKD"
@@ -465,11 +468,16 @@ class EquityLoader(BaseLoader):
 
         if self.market == "PSX":
             raise ValueError(
-                f"No data for {self.ticker}. "
-                "PSX tickers need .KA suffix (e.g. ENGRO.KA). "
-                "Indices use ^ prefix (e.g. ^KSE100)."
+                f"No data for '{self.ticker}' on Yahoo Finance. "
+                "PSX data availability is limited on Yahoo Finance. "
+                "Try these working PSX tickers: "
+                "OGDC.KA, PPL.KA, HBL.KA, UBL.KA, MCB.KA, SYS.KA, TRG.KA. "
+                "Or use US tickers like SPY, AAPL, JPM instead."
             )
-        raise ValueError(f"No data returned for {self.ticker}.")
+        raise ValueError(
+            f"No data returned for '{self.ticker}'. "
+            "Please check the ticker symbol and try again."
+        )
 
     def _engineer(self, df: pd.DataFrame) -> pd.DataFrame:
         out   = pd.DataFrame(index=df.index)

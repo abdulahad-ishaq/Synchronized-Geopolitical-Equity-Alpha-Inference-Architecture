@@ -529,8 +529,8 @@ class NewsConfig:
 class MarketConfig:
     """Stock market and ticker settings for all supported markets."""
 
-    DEFAULT_TICKER:    str = "ENGRO.KA"   # ^KSE100 not on Yahoo Finance
-    DEFAULT_MARKET:    str = "PSX"
+    DEFAULT_TICKER:    str = "SPY"
+    DEFAULT_MARKET:    str = "NYSE/NASDAQ"
 
     FREE_TIER_TICKER_LIMIT:   int = 1
     MAX_COMPARISON_TICKERS:   int = 5

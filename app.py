@@ -243,10 +243,12 @@ with st.sidebar:
 
     # Market selector
     market_options = list(Config.global_markets.EXCHANGES.keys())
+    # Default to NYSE/NASDAQ (index 1, PSX is index 0)
+    default_market_idx = market_options.index("NYSE/NASDAQ") if "NYSE/NASDAQ" in market_options else 0
     selected_market = st.selectbox(
         "Market",
         options=market_options,
-        index=0,
+        index=default_market_idx,
         format_func=lambda m: (
             f"{Config.global_markets.EXCHANGES[m]['flag']} "
             f"{Config.global_markets.EXCHANGES[m]['name']}"
@@ -273,7 +275,7 @@ with st.sidebar:
     if selected_group == "Custom":
         ticker_input = st.text_input(
             "Ticker Symbol",
-            value="ENGRO.KA" if selected_market == "PSX" else "SPY",
+            value="SPY",
         ).upper().strip()
     else:
         default_tickers = ticker_groups.get(selected_group, ["SPY"])

@@ -84,7 +84,7 @@ class EquityCurveChart:
             name="SGEAIA Strategy",
             line=dict(color=Config.ui.PRIMARY_COLOUR, width=2),
             fill="tozeroy",
-            fillcolor=f"{Config.ui.PRIMARY_COLOUR}12",
+            fillcolor="rgba(0,180,216,0.07)",
             hovertemplate=(
                 "Step: %{x}<br>"
                 "Value: %{y:.4f}<br>"
@@ -199,7 +199,7 @@ class DrawdownChart:
             name="Drawdown",
             fill="tozeroy",
             line=dict(color=Config.ui.BEAR_COLOUR, width=1),
-            fillcolor=f"{Config.ui.BEAR_COLOUR}25",
+            fillcolor="rgba(255,23,68,0.15)",
             hovertemplate=(
                 "Step: %{x}<br>"
                 "Drawdown: %{y:.2f}%<br>"
@@ -324,7 +324,7 @@ class RollingMetricsChart:
             name=f"Volatility ({window}-step)",
             line=dict(color=Config.ui.WARNING_COLOUR, width=1.5),
             fill="tozeroy",
-            fillcolor=f"{Config.ui.WARNING_COLOUR}12",
+            fillcolor="rgba(255,196,0,0.07)",
             hovertemplate="Step: %{x}<br>Vol: %{y:.1f}%<extra></extra>",
         ), row=2, col=1)
 
@@ -532,7 +532,7 @@ class AblationComparer:
             name="Hybrid (BiLSTM + NLP)",
             line=dict(color=Config.ui.PRIMARY_COLOUR, width=2),
             fill="tozeroy",
-            fillcolor=f"{Config.ui.PRIMARY_COLOUR}10",
+            fillcolor="rgba(0,180,216,0.06)",
             hovertemplate="Step: %{x}<br>Hybrid: %{y:.4f}<extra></extra>",
         ))
 
