@@ -145,24 +145,16 @@ class EquityCurveChart:
         )
 
         fig.update_layout(
-            **PTHEME,
+            **{**PTHEME,
+               "yaxis": {**PTHEME["yaxis"],
+                         "title": "Portfolio Value (Base=1.0)",
+                         "tickformat": ".2f"},
+               "xaxis": {**PTHEME["xaxis"],
+                         "title": "Trading Steps"}},
             height=300,
-            title=dict(
-                text=title,
-                font=dict(size=12, color="#546e7a"),
-            ),
-            yaxis=dict(
-                title="Portfolio Value (Base=1.0)",
-                tickformat=".2f",
-                **PTHEME["yaxis"],
-            ),
-            xaxis=dict(
-                title="Trading Steps",
-                **PTHEME["xaxis"],
-            ),
+            title=dict(text=title, font=dict(size=12, color="#546e7a")),
             legend=dict(
-                orientation="h",
-                y=1.08,
+                orientation="h", y=1.08,
                 font=dict(family="IBM Plex Mono", size=9, color="#90a4ae"),
             ),
             hovermode="x unified",
@@ -231,21 +223,14 @@ class DrawdownChart:
         )
 
         fig.update_layout(
-            **PTHEME,
+            **{**PTHEME,
+               "yaxis": {**PTHEME["yaxis"],
+                         "title": "Drawdown (%)",
+                         "ticksuffix": "%"},
+               "xaxis": {**PTHEME["xaxis"],
+                         "title": "Trading Steps"}},
             height=220,
-            title=dict(
-                text=title,
-                font=dict(size=12, color="#546e7a"),
-            ),
-            yaxis=dict(
-                title="Drawdown (%)",
-                ticksuffix="%",
-                **PTHEME["yaxis"],
-            ),
-            xaxis=dict(
-                title="Trading Steps",
-                **PTHEME["xaxis"],
-            ),
+            title=dict(text=title, font=dict(size=12, color="#546e7a")),
             showlegend=False,
         )
         return fig
@@ -423,24 +408,14 @@ class TradeDistribution:
         )
 
         fig.update_layout(
-            **PTHEME,
+            **{**PTHEME,
+               "yaxis": {**PTHEME["yaxis"], "title": "Trade Count"},
+               "xaxis": {**PTHEME["xaxis"], "title": "P&L per Trade"}},
             height=240,
-            title=dict(
-                text=title,
-                font=dict(size=12, color="#546e7a"),
-            ),
+            title=dict(text=title, font=dict(size=12, color="#546e7a")),
             barmode="overlay",
-            yaxis=dict(
-                title="Trade Count",
-                **PTHEME["yaxis"],
-            ),
-            xaxis=dict(
-                title="P&L per Trade",
-                **PTHEME["xaxis"],
-            ),
             legend=dict(
-                orientation="h",
-                y=1.08,
+                orientation="h", y=1.08,
                 font=dict(family="IBM Plex Mono", size=9, color="#90a4ae"),
             ),
         )
@@ -556,20 +531,14 @@ class AblationComparer:
         )
 
         fig.update_layout(
-            **PTHEME,
+            **{**PTHEME,
+               "yaxis": {**PTHEME["yaxis"],
+                         "title": "Portfolio Value",
+                         "tickformat": ".3f"}},
             height=300,
-            title=dict(
-                text=title,
-                font=dict(size=12, color="#546e7a"),
-            ),
-            yaxis=dict(
-                title="Portfolio Value",
-                tickformat=".3f",
-                **PTHEME["yaxis"],
-            ),
+            title=dict(text=title, font=dict(size=12, color="#546e7a")),
             legend=dict(
-                orientation="h",
-                y=1.08,
+                orientation="h", y=1.08,
                 font=dict(family="IBM Plex Mono", size=9, color="#90a4ae"),
             ),
             hovermode="x unified",
@@ -622,20 +591,13 @@ class AblationComparer:
         ))
 
         fig.update_layout(
-            **PTHEME,
+            **{**PTHEME,
+               "yaxis": {**PTHEME["yaxis"], "title": "Value"}},
             height=300,
-            title=dict(
-                text=title,
-                font=dict(size=12, color="#546e7a"),
-            ),
+            title=dict(text=title, font=dict(size=12, color="#546e7a")),
             barmode="group",
-            yaxis=dict(
-                title="Value",
-                **PTHEME["yaxis"],
-            ),
             legend=dict(
-                orientation="h",
-                y=1.08,
+                orientation="h", y=1.08,
                 font=dict(family="IBM Plex Mono", size=9, color="#90a4ae"),
             ),
         )
