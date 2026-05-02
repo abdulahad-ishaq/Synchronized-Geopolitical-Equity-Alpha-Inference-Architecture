@@ -146,10 +146,10 @@ class EquityCurveChart:
 
         fig.update_layout(
             **{**PTHEME,
-               "yaxis": {**PTHEME["yaxis"],
+               "yaxis": {,
                          "title": "Portfolio Value (Base=1.0)",
                          "tickformat": ".2f"},
-               "xaxis": {**PTHEME["xaxis"],
+               "xaxis": {,
                          "title": "Trading Steps"}},
             height=300,
             title=dict(text=title, font=dict(size=12, color="#546e7a")),
@@ -224,10 +224,10 @@ class DrawdownChart:
 
         fig.update_layout(
             **{**PTHEME,
-               "yaxis": {**PTHEME["yaxis"],
+               "yaxis": {,
                          "title": "Drawdown (%)",
                          "ticksuffix": "%"},
-               "xaxis": {**PTHEME["xaxis"],
+               "xaxis": {,
                          "title": "Trading Steps"}},
             height=220,
             title=dict(text=title, font=dict(size=12, color="#546e7a")),
@@ -331,7 +331,9 @@ class RollingMetricsChart:
         )
 
         fig.update_layout(
-            **PTHEME,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="#0a1220",
+            font=dict(family="IBM Plex Mono, monospace", color="#546e7a", size=10),
             height=340,
             title=dict(
                 text=title,
@@ -409,8 +411,8 @@ class TradeDistribution:
 
         fig.update_layout(
             **{**PTHEME,
-               "yaxis": {**PTHEME["yaxis"], "title": "Trade Count"},
-               "xaxis": {**PTHEME["xaxis"], "title": "P&L per Trade"}},
+               "yaxis": {, "title": "Trade Count"},
+               "xaxis": {, "title": "P&L per Trade"}},
             height=240,
             title=dict(text=title, font=dict(size=12, color="#546e7a")),
             barmode="overlay",
@@ -467,7 +469,9 @@ class TradeDistribution:
             ),
         ))
         fig.update_layout(
-            **PTHEME,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="#0a1220",
+            font=dict(family="IBM Plex Mono, monospace", color="#546e7a", size=10),
             height=80 + len(rows) * 25,
             margin=dict(l=0, r=0, t=8, b=0),
         )
@@ -532,7 +536,7 @@ class AblationComparer:
 
         fig.update_layout(
             **{**PTHEME,
-               "yaxis": {**PTHEME["yaxis"],
+               "yaxis": {,
                          "title": "Portfolio Value",
                          "tickformat": ".3f"}},
             height=300,
@@ -592,7 +596,7 @@ class AblationComparer:
 
         fig.update_layout(
             **{**PTHEME,
-               "yaxis": {**PTHEME["yaxis"], "title": "Value"}},
+               "yaxis": {, "title": "Value"}},
             height=300,
             title=dict(text=title, font=dict(size=12, color="#546e7a")),
             barmode="group",
@@ -725,7 +729,9 @@ class WalkForwardChart:
         )
 
         fig.update_layout(
-            **PTHEME,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="#0a1220",
+            font=dict(family="IBM Plex Mono, monospace", color="#546e7a", size=10),
             height=340,
             title=dict(
                 text=title,
